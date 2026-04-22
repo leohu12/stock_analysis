@@ -297,7 +297,6 @@ class StockScreener:
         results = []
         codes = df["代码"].tolist()[:max_scan]
         total = len(codes)
-        scanned = [0]
         stopped = [False]  # 中断标记
         
         # Ctrl+C 中断处理
@@ -334,20 +333,22 @@ class StockScreener:
             return None
 
         completed = 0
+        found_count = 0
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = {executor.submit(check, code): code for code in codes}
+            # 立即打印开始信息
+            print(f"  已扫描 0/{total} 只...", end="\r")
             for future in as_completed(futures):
                 if stopped[0]:
-                    # 取消未完成的任务
                     future.cancel()
                     continue
                 completed += 1
-                scanned[0] = completed
-                if completed % 50 == 0:
-                    print(f"  已扫描 {completed}/{total} 只...")
                 result = future.result()
                 if result:
                     results.append(result)
+                    found_count += 1
+                # 每完成一个就更新进度
+                print(f"  已扫描 {completed}/{total} 只... 找到 {found_count} 只", end="\r")
         
         # 恢复信号处理
         signal.signal(signal.SIGINT, original_handler)
