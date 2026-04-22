@@ -41,7 +41,7 @@ class EastMoneyFetcher:
             'Referer': 'https://quote.eastmoney.com/',
             'Accept': '*/*',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
+            # 'Accept-Encoding': 'gzip, deflate',  # requests 会自动处理
             'Connection': 'keep-alive',
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache',
@@ -72,6 +72,7 @@ class EastMoneyFetcher:
     def _get(self, url, params=None, retries=3):
         """带重试的GET请求"""
         last_err = None
+        last_resp_text = None
         for i in range(retries):
             try:
                 resp = self.session.get(
@@ -80,13 +81,24 @@ class EastMoneyFetcher:
                 )
                 resp.raise_for_status()
                 resp.encoding = 'utf-8'
-                return resp.json()
+                resp_text = resp.text.strip()
+                if not resp_text:
+                    raise ValueError(f"API返回空响应: {url}")
+                return json.loads(resp_text)
+            except json.JSONDecodeError as e:
+                last_resp_text = getattr(resp, 'text', '')[:500] if 'resp' in dir() else None
+                last_err = Exception(f"JSON解析失败 (响应前500字符): {last_resp_text}")
+                if i < retries - 1:
+                    wait = (i + 1) * 2
+                    time.sleep(wait)
+                    self.session.close()
+                    self.session = requests.Session()
+                    self.__init__()
             except Exception as e:
                 last_err = e
                 if i < retries - 1:
                     wait = (i + 1) * 2
                     time.sleep(wait)
-                    # 每次重试重建连接池，避免被服务器断连
                     self.session.close()
                     self.session = requests.Session()
                     self.__init__()
