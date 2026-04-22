@@ -334,7 +334,7 @@ class StockScreener:
 
         completed = 0
         found_count = 0
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=10) as executor:
             futures = {executor.submit(check, code): code for code in codes}
             # 立即打印开始信息
             print(f"  已扫描 0/{total} 只...", end="\r")

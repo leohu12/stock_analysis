@@ -69,14 +69,13 @@ class EastMoneyFetcher:
         self.session.mount("http://", adapter)
         self.timeout = 15
 
-    def _get(self, url, params=None, retries=3):
+    def _get(self, url, params=None, retries=2):
         """带重试的GET请求"""
         last_err = None
-        last_resp_text = None
         for i in range(retries):
             try:
                 resp = self.session.get(
-                    url, params=params, timeout=self.timeout,
+                    url, params=params, timeout=8,
                     verify=False, allow_redirects=True
                 )
                 resp.raise_for_status()
@@ -85,23 +84,10 @@ class EastMoneyFetcher:
                 if not resp_text:
                     raise ValueError(f"API返回空响应: {url}")
                 return json.loads(resp_text)
-            except json.JSONDecodeError as e:
-                last_resp_text = getattr(resp, 'text', '')[:500] if 'resp' in dir() else None
-                last_err = Exception(f"JSON解析失败 (响应前500字符): {last_resp_text}")
-                if i < retries - 1:
-                    wait = (i + 1) * 2
-                    time.sleep(wait)
-                    self.session.close()
-                    self.session = requests.Session()
-                    self.__init__()
             except Exception as e:
                 last_err = e
                 if i < retries - 1:
-                    wait = (i + 1) * 2
-                    time.sleep(wait)
-                    self.session.close()
-                    self.session = requests.Session()
-                    self.__init__()
+                    time.sleep(1)
         raise last_err
 
     def _post(self, url, data=None, retries=3):
