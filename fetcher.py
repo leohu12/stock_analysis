@@ -75,7 +75,7 @@ class EastMoneyFetcher:
         for i in range(retries):
             try:
                 resp = self.session.get(
-                    url, params=params, timeout=8,
+                    url, params=params, timeout=5,
                     verify=False, allow_redirects=True
                 )
                 resp.raise_for_status()

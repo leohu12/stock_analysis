@@ -294,20 +294,24 @@ class StockScreener:
     def multi_signal_screen(self, df, top_n=30, max_scan=500):
         """多重信号选股：同时出现2个以上买入信号"""
         import signal
+        import threading
         results = []
         codes = df["代码"].tolist()[:max_scan]
         total = len(codes)
-        stopped = [False]  # 中断标记
+        stopped = threading.Event()
         
         # Ctrl+C 中断处理
         def signal_handler(sig, frame):
-            stopped[0] = True
-            print(f"\n  {Color.YELLOW}用户中断，正在保存已扫描结果...{Color.RESET}")
+            if not stopped.is_set():
+                stopped.set()
+                print(f"\n  {Color.YELLOW}用户中断，正在保存已扫描结果...{Color.RESET}")
         original_handler = signal.signal(signal.SIGINT, signal_handler)
         
         print(f"  正在扫描多重信号 ({total}只)，按 Ctrl+C 可中断...")
         
         def check(code):
+            if stopped.is_set():
+                return None
             try:
                 kline = fetcher.get_kline(code, count=60)
                 if kline.empty or len(kline) < 30:
@@ -339,7 +343,7 @@ class StockScreener:
             # 立即打印开始信息
             print(f"  已扫描 0/{total} 只...", end="\r")
             for future in as_completed(futures):
-                if stopped[0]:
+                if stopped.is_set():
                     future.cancel()
                     continue
                 completed += 1
@@ -353,7 +357,7 @@ class StockScreener:
         # 恢复信号处理
         signal.signal(signal.SIGINT, original_handler)
         
-        if stopped[0]:
+        if stopped.is_set():
             print(f"  {Color.YELLOW}扫描被中断，已找到 {len(results)} 只符合条件{Color.RESET}")
         else:
             print(f"  扫描完成，找到 {len(results)} 只符合条件")
