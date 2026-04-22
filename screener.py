@@ -290,11 +290,13 @@ class StockScreener:
 
     # ==================== 综合选股 ====================
 
-    def multi_signal_screen(self, df, top_n=30):
+    def multi_signal_screen(self, df, top_n=30, max_scan=500):
         """多重信号选股：同时出现2个以上买入信号"""
         results = []
-        codes = df["代码"].tolist()[:300]
-        print(f"  正在扫描多重信号 (前{len(codes)}只)...")
+        codes = df["代码"].tolist()[:max_scan]
+        total = len(codes)
+        scanned = [0]  # 用列表包装以便在闭包中修改
+        print(f"  正在扫描多重信号 ({total}只)...")
 
         def check(code):
             try:
@@ -321,13 +323,19 @@ class StockScreener:
                 pass
             return None
 
+        completed = 0
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = {executor.submit(check, code): code for code in codes}
             for future in as_completed(futures):
+                completed += 1
+                scanned[0] = completed
+                if completed % 50 == 0:
+                    print(f"  已扫描 {completed}/{total} 只...")
                 result = future.result()
                 if result:
                     results.append(result)
 
+        print(f"  扫描完成，找到 {len(results)} 只符合条件")
         result_df = pd.DataFrame(results)
         if not result_df.empty:
             result_df = result_df.sort_values("买入信号数", ascending=False)

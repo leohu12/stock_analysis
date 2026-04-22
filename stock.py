@@ -430,7 +430,14 @@ def show_stock_selection():
         elif choice == "6":
             result = screener.screen_boll_lower(all_stocks)
         elif choice == "7":
-            result = screener.multi_signal_screen(all_stocks)
+            # 多重信号选股可以加价格过滤
+            max_price = input(f"  {Color.BOLD}最高价格上限 (直接回车跳过，如 50): {Color.RESET}").strip()
+            stocks_to_scan = all_stocks
+            if max_price:
+                stocks_to_scan = all_stocks[all_stocks["最新价"] <= float(max_price)]
+                print(f"  价格限制: ≤ {max_price} 元，剩余 {len(stocks_to_scan)} 只待扫描")
+            
+            result = screener.multi_signal_screen(stocks_to_scan)
         elif choice == "8":
             return
         else:
