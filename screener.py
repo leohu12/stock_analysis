@@ -11,6 +11,7 @@ import threading
 
 from fetcher import fetcher
 from indicators import calc_all_indicators, analyze_signals
+from display import Color
 
 
 class StockScreener:
@@ -292,12 +293,21 @@ class StockScreener:
 
     def multi_signal_screen(self, df, top_n=30, max_scan=500):
         """多重信号选股：同时出现2个以上买入信号"""
+        import signal
         results = []
         codes = df["代码"].tolist()[:max_scan]
         total = len(codes)
-        scanned = [0]  # 用列表包装以便在闭包中修改
-        print(f"  正在扫描多重信号 ({total}只)...")
-
+        scanned = [0]
+        stopped = [False]  # 中断标记
+        
+        # Ctrl+C 中断处理
+        def signal_handler(sig, frame):
+            stopped[0] = True
+            print(f"\n  {Color.YELLOW}用户中断，正在保存已扫描结果...{Color.RESET}")
+        original_handler = signal.signal(signal.SIGINT, signal_handler)
+        
+        print(f"  正在扫描多重信号 ({total}只)，按 Ctrl+C 可中断...")
+        
         def check(code):
             try:
                 kline = fetcher.get_kline(code, count=60)
@@ -327,6 +337,10 @@ class StockScreener:
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = {executor.submit(check, code): code for code in codes}
             for future in as_completed(futures):
+                if stopped[0]:
+                    # 取消未完成的任务
+                    future.cancel()
+                    continue
                 completed += 1
                 scanned[0] = completed
                 if completed % 50 == 0:
@@ -334,8 +348,15 @@ class StockScreener:
                 result = future.result()
                 if result:
                     results.append(result)
-
-        print(f"  扫描完成，找到 {len(results)} 只符合条件")
+        
+        # 恢复信号处理
+        signal.signal(signal.SIGINT, original_handler)
+        
+        if stopped[0]:
+            print(f"  {Color.YELLOW}扫描被中断，已找到 {len(results)} 只符合条件{Color.RESET}")
+        else:
+            print(f"  扫描完成，找到 {len(results)} 只符合条件")
+        
         result_df = pd.DataFrame(results)
         if not result_df.empty:
             result_df = result_df.sort_values("买入信号数", ascending=False)
