@@ -434,7 +434,13 @@ def show_stock_selection():
             max_price = input(f"  {Color.BOLD}最高价格上限 (直接回车跳过，如 50): {Color.RESET}").strip()
             stocks_to_scan = all_stocks
             if max_price:
-                stocks_to_scan = all_stocks[all_stocks["最新价"] <= float(max_price)]
+                max_price_val = float(max_price)
+                # 只保留价格有效的股票（>0 且 <= 限制价）
+                stocks_to_scan = all_stocks[
+                    (all_stocks["最新价"].notna()) & 
+                    (all_stocks["最新价"] > 0) & 
+                    (all_stocks["最新价"] <= max_price_val)
+                ]
                 print(f"  价格限制: ≤ {max_price} 元，剩余 {len(stocks_to_scan)} 只待扫描")
             
             result = screener.multi_signal_screen(stocks_to_scan)
