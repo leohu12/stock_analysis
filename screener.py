@@ -535,7 +535,13 @@ class StockScreener:
                     if 25 <= rsi <= 60:  # 放宽到25-60
                         rsi_ok = True
                 
-                # 综合评分：满足2个条件以上
+                # 获取当前涨跌幅（排除涨停股，涨停股通常>=9%）
+                current_change = latest.get("涨跌幅", 0)
+                if pd.isna(current_change):
+                    current_change = 0
+                is_limit_up = current_change >= 9.0  # 涨停排除
+                
+                # 综合评分：满足2个条件以上，且不是涨停
                 score = 0
                 reasons = []
                 if price_in_lower_half:
@@ -547,6 +553,10 @@ class StockScreener:
                 if rsi_ok:
                     score += 1
                     reasons.append(f"RSI适中")
+                
+                # 涨停股不入选
+                if is_limit_up:
+                    return None
                 
                 if score >= 2:
                     return {
