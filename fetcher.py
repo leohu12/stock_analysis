@@ -657,7 +657,9 @@ class EastMoneyFetcher:
         results = []
         if data and data.get("QuotationCodeTable"):
             for item in data["QuotationCodeTable"]["Data"]:
-                if item.get("SecurityTypeName") in ["A股", "科创板", "创业板", "北交所"]:
+                # 支持：A股、沪A、深A、创业板、科创板、北交所
+                type_name = item.get("SecurityTypeName", "")
+                if any(t in type_name for t in ["A", "创", "科", "北"]):
                     results.append({
                         "代码": item.get("Code", ""),
                         "名称": item.get("Name", ""),
