@@ -415,6 +415,8 @@ def show_stock_selection():
         # 过滤ST和停牌
         all_stocks = all_stocks[~all_stocks["名称"].str.contains("ST|退", na=False)]
         all_stocks = all_stocks[all_stocks["最新价"] > 0]
+        # 过滤创业板（300/301开头）和科创板（688开头）
+        all_stocks = all_stocks[~all_stocks["代码"].str.startswith(("300", "301", "688"))]
 
         result = pd.DataFrame()
         if choice == "1":
