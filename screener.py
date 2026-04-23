@@ -690,9 +690,9 @@ def screen_realtime_simple():
     """
     简单的实时扫描（预设场景，普通人都能看懂）
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'='*55}")
     print(f"{Color.CYAN}[实时选股]{Color.RESET} - 找今天值得关注的好股票")
-    print(f"{'='*60}")
+    print(f"{'='*55}")
     print()
     print(f"  {Color.BOLD}你想找什么样的股票？{Color.RESET}")
     print()
@@ -712,7 +712,8 @@ def screen_realtime_simple():
     # 使用预设场景
     if choice in SCREEN_SCENARIOS:
         scenario = SCREEN_SCENARIOS[choice]
-        return screen_realtime(
+        print(f"\n  {Color.YELLOW}正在扫描...{Color.RESET}")
+        result = screen_realtime(
             top_n=30,
             min_price=1,
             max_price=scenario.get("max_price", 100),
@@ -720,8 +721,10 @@ def screen_realtime_simple():
             min_turnover=scenario["min_turnover"],
             min_volume_ratio=scenario["min_volume_ratio"],
             include_limit_up=scenario["include_limit_up"],
-            prefer_small_cap=scenario.get("prefer_small_cap", False)
+            prefer_small_cap=scenario.get("prefer_small_cap", False),
+            quiet=True
         )
+        return result
     
     # 自定义
     if choice == "0":
@@ -776,7 +779,8 @@ def screen_realtime_custom():
 
 def screen_realtime(top_n=30, min_price=1, max_price=1000, 
                     min_change=3, min_turnover=1, min_volume_ratio=1.5,
-                    include_limit_up=True, prefer_small_cap=False):
+                    include_limit_up=True, prefer_small_cap=False,
+                    quiet=False):
     """
     实时扫描潜力股（基于量价信号，不依赖历史K线指标）
     
@@ -789,19 +793,18 @@ def screen_realtime(top_n=30, min_price=1, max_price=1000,
         min_volume_ratio: 最小量比
         include_limit_up: 是否包含涨停股
         prefer_small_cap: 偏好小市值
+        quiet: 静默模式，不打印中间信息
     """
-    print(f"\n{'='*60}")
-    print(f"{Color.CYAN}[正在扫描...]{Color.RESET}")
-    print(f"{'='*60}\n")
+    if not quiet:
+        print(f"\n  {Color.YELLOW}正在获取实时行情...{Color.RESET}")
     
     # 第一步：获取全市场实时数据
-    print(f"  {Color.YELLOW}正在获取实时行情...{Color.RESET}")
     try:
         df = fetcher.get_all_stocks()
         if df.empty:
-            print(f"  {Color.RED}获取数据失败，请检查网络连接{Color.RESET}")
+            if not quiet:
+                print(f"  {Color.RED}获取数据失败{Color.RESET}")
             return pd.DataFrame()
-        print(f"  获取到 {len(df)} 只股票\n")
         
         # 过滤ST、退市、停牌
         df = df[~df["名称"].str.contains("ST|退", na=False)]
@@ -809,9 +812,9 @@ def screen_realtime(top_n=30, min_price=1, max_price=1000,
         
         # 过滤创业板(300/301)和科创板(688)
         df = df[~df["代码"].str.startswith(("300", "301", "688"))]
-        print(f"  过滤ST和创业板/科创板后: {len(df)} 只\n")
     except Exception as e:
-        print(f"  {Color.RED}获取数据失败: {e}{Color.RESET}")
+        if not quiet:
+            print(f"  {Color.RED}获取数据失败: {e}{Color.RESET}")
         return pd.DataFrame()
     
     # 第二步：基础条件过滤
@@ -838,10 +841,9 @@ def screen_realtime(top_n=30, min_price=1, max_price=1000,
             (df_filtered["涨跌幅"] < 9.9)  # 排除涨停
         ]
     
-    print(f"  基础条件过滤后: {len(df_filtered)} 只")
-    
     if df_filtered.empty:
-        print(f"\n  {Color.YELLOW}没有找到符合条件的股票{Color.RESET}")
+        if not quiet:
+            print(f"  {Color.YELLOW}没有符合条件的股票{Color.RESET}")
         return pd.DataFrame()
     
     # 第三步：多维度评分
@@ -904,15 +906,11 @@ def screen_realtime(top_n=30, min_price=1, max_price=1000,
             # 计算建议买入价（基于当前价格回调2-5%）
             is_limit_up = change >= 9.5
             if is_limit_up:
-                # 涨停股：建议关注次日机会
                 suggest_buy = "-"
             else:
-                # 正常股：建议回调2-5%时买入
                 if change >= 5:
-                    # 涨多了，回调风险大，等跌3-5%再买
                     suggest_buy = round(price * 0.97, 2)
                 else:
-                    # 涨幅适中，可以考虑回调2%买入
                     suggest_buy = round(price * 0.98, 2)
             
             results.append({
@@ -921,7 +919,7 @@ def screen_realtime(top_n=30, min_price=1, max_price=1000,
                 "评分": round(score, 1),
                 "现价": round(price, 2),
                 "涨幅": f"{change:+.2f}%",
-                "建议买入价": suggest_buy,
+                "建议价": suggest_buy,
             })
         except Exception:
             continue
