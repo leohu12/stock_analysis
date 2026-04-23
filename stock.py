@@ -683,15 +683,20 @@ def analyze_multiple_stocks(codes):
     print(f"{Color.BOLD}{Color.CYAN}{'='*60}{Color.RESET}\n")
     
     results = []
-    for code in codes:
+    total = len(codes)
+    
+    for i, code in enumerate(codes, 1):
         code = code.strip()
         if not code:
             continue
         
+        # 显示进度
+        print(f"\r  {Color.DIM}正在获取 {i}/{total}: {code}...{Color.RESET}", end="", flush=True)
+        
         try:
-            kline = fetcher.get_kline(code, count=120)
+            kline = fetcher.get_kline(code, count=120, timeout=10)
             if kline.empty:
-                print(f"  {Color.YELLOW}{code}: 未找到数据{Color.RESET}")
+                print(f"\r  {Color.YELLOW}{code}: 未找到数据{Color.RESET}" + " " * 20)
                 continue
             
             kline = calc_all_indicators(kline)
@@ -731,9 +736,13 @@ def analyze_multiple_stocks(codes):
                 "空间": f"{Color.RED}+{up_space:.0f}%{Color.RESET}" if up_space > 0 else f"{Color.GREEN}{up_space:.0f}%{Color.RESET}",
                 "信号": f"买{len(buy_signals)}" if buy_signals else ("卖" if sell_signals else "中性"),
             })
+            print(f"\r  {Color.GREEN}[OK] {code} {name[:6]} 加载成功{Color.RESET}" + " " * 20)
         except Exception as e:
-            print(f"  {Color.YELLOW}{code}: 获取失败{Color.RESET}")
+            print(f"\r  {Color.YELLOW}{code}: 获取失败 ({str(e)[:20]}){Color.RESET}" + " " * 20)
             continue
+    
+    # 清除进度行
+    print("\r" + " " * 60 + "\r", end="")
     
     if results:
         # 打印表格

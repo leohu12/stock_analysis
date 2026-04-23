@@ -69,13 +69,13 @@ class EastMoneyFetcher:
         self.session.mount("http://", adapter)
         self.timeout = 15
 
-    def _get(self, url, params=None, retries=2):
+    def _get(self, url, params=None, retries=2, timeout=15):
         """带重试的GET请求"""
         last_err = None
         for i in range(retries):
             try:
                 resp = self.session.get(
-                    url, params=params, timeout=5,
+                    url, params=params, timeout=timeout,
                     verify=False, allow_redirects=True
                 )
                 resp.raise_for_status()
@@ -238,7 +238,7 @@ class EastMoneyFetcher:
 
     # ==================== 历史K线 ====================
 
-    def get_kline(self, stock_code, period="daily", start_date=None, end_date=None, count=120):
+    def get_kline(self, stock_code, period="daily", start_date=None, end_date=None, count=120, timeout=15):
         """
         获取历史K线数据（多接口容错）
         stock_code: 股票代码，如 '600519'
@@ -246,23 +246,24 @@ class EastMoneyFetcher:
         start_date: 开始日期 '20240101'
         end_date: 结束日期 '20241231'
         count: 获取条数
+        timeout: 请求超时（秒）
         """
         # 尝试多个数据源
-        df = self._get_kline_dcweb(stock_code, period, start_date, end_date, count)
+        df = self._get_kline_dcweb(stock_code, period, start_date, end_date, count, timeout)
         if not df.empty:
             return df
 
-        df = self._get_kline_push2his(stock_code, period, start_date, end_date, count)
+        df = self._get_kline_push2his(stock_code, period, start_date, end_date, count, timeout)
         if not df.empty:
             return df
 
-        df = self._get_kline_63(stock_code, period, start_date, end_date, count)
+        df = self._get_kline_63(stock_code, period, start_date, end_date, count, timeout)
         if not df.empty:
             return df
 
         return pd.DataFrame()
 
-    def _get_kline_dcweb(self, stock_code, period="daily", start_date=None, end_date=None, count=120):
+    def _get_kline_dcweb(self, stock_code, period="daily", start_date=None, end_date=None, count=120, timeout=15):
         """数据源1: datacenter.eastmoney.com（最稳定）"""
         secid = self._code_to_secid(stock_code)
         if not secid:
@@ -284,7 +285,7 @@ class EastMoneyFetcher:
         }
 
         try:
-            data = self._get(url, params)
+            data = self._get(url, params, timeout=timeout)
             if data and data.get("result") and data["result"].get("data"):
                 records = []
                 for item in data["result"]["data"]:
@@ -314,7 +315,7 @@ class EastMoneyFetcher:
             pass
         return pd.DataFrame()
 
-    def _get_kline_push2his(self, stock_code, period="daily", start_date=None, end_date=None, count=120):
+    def _get_kline_push2his(self, stock_code, period="daily", start_date=None, end_date=None, count=120, timeout=15):
         """数据源2: push2his.eastmoney.com（原始接口）"""
         secid = self._code_to_secid(stock_code)
         if not secid:
@@ -339,7 +340,7 @@ class EastMoneyFetcher:
         }
 
         try:
-            data = self._get(url, params)
+            data = self._get(url, params, timeout=timeout)
             if data and data.get("data") and data["data"].get("klines"):
                 klines = data["data"]["klines"]
                 name = data["data"].get("name", "")
@@ -349,7 +350,7 @@ class EastMoneyFetcher:
             pass
         return pd.DataFrame()
 
-    def _get_kline_63(self, stock_code, period="daily", start_date=None, end_date=None, count=120):
+    def _get_kline_63(self, stock_code, period="daily", start_date=None, end_date=None, count=120, timeout=15):
         """数据源3: money.finance.sina.com.cn（新浪财经备选）"""
         if stock_code.startswith("6"):
             symbol = f"sh{stock_code}"
@@ -365,7 +366,7 @@ class EastMoneyFetcher:
         }
 
         try:
-            data = self._get(url, params)
+            data = self._get(url, params, timeout=timeout)
             if data and isinstance(data, list):
                 records = []
                 for item in data:
