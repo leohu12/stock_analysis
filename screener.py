@@ -443,16 +443,26 @@ class StockScreener:
             result_df = result_df.sort_values("买入信号数", ascending=False)
         return result_df.head(top_n) if not result_df.empty else pd.DataFrame()
 
-    def screen_potential_stocks(self, df, top_n=30, max_scan=500):
+    def screen_potential_stocks(self, df, top_n=30, max_scan=500, max_price=None):
         """
         潜力股筛选：价格偏低 + 主力资金持续买入
         条件：
         1. 价格在布林中轨以下（股价相对不高）
         2. 近5日主力资金净流入为正
         3. RSI 在 30-60 之间（不是超买也不是超卖）
+        
+        Args:
+            df: 股票DataFrame
+            top_n: 返回结果数量
+            max_scan: 最大扫描数量
+            max_price: 价格上限（可选）
         """
         import signal
         import threading
+        
+        # 如果有价格上限，先过滤
+        if max_price is not None:
+            df = df[df["最新价"].notna() & (df["最新价"] > 0) & (df["最新价"] <= max_price)]
         
         results = []
         all_codes = df["代码"].tolist()
@@ -535,13 +545,27 @@ class StockScreener:
                     if 25 <= rsi <= 60:  # 放宽到25-60
                         rsi_ok = True
                 
-                # 获取当前涨跌幅（排除涨停股，涨停股通常>=9%）
+                # 获取当前涨跌幅
                 current_change = latest.get("涨跌幅", 0)
                 if pd.isna(current_change):
                     current_change = 0
-                is_limit_up = current_change >= 9.0  # 涨停排除
+                is_limit_up = current_change >= 9.0
                 
-                # 综合评分：满足2个条件以上，且不是涨停
+                # 计算建议买入价（支撑位附近）
+                support = latest.get("BOLL_LOW", latest["收盘"] * 0.97)
+                if pd.isna(support):
+                    support = latest["收盘"] * 0.97
+                # 如果是涨停股，建议买入价设为涨停价
+                if is_limit_up:
+                    suggest_buy = round(latest["收盘"], 2)
+                else:
+                    # 正常股：建议在回调到布林下轨或MA20时买入
+                    ma20 = latest.get("MA20", support)
+                    if pd.isna(ma20):
+                        ma20 = support
+                    suggest_buy = round(min(support, ma20) * 1.005, 2)  # 略高于支撑
+                
+                # 综合评分：满足2个条件以上
                 score = 0
                 reasons = []
                 if price_in_lower_half:
@@ -554,10 +578,6 @@ class StockScreener:
                     score += 1
                     reasons.append(f"RSI适中")
                 
-                # 涨停股不入选
-                if is_limit_up:
-                    return None
-                
                 if score >= 2:
                     return {
                         "代码": code,
@@ -567,6 +587,7 @@ class StockScreener:
                         "综合评分": score,
                         "入选原因": "/".join(reasons),
                         "RSI6": round(latest.get("RSI6", 0), 1) if pd.notna(latest.get("RSI6")) else None,
+                        "建议买入价": suggest_buy,
                         "布林位置": f"{latest['收盘']:.2f}" if pd.notna(latest.get("BOLL_MID")) else "-",
                     }
             except Exception:

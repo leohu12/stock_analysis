@@ -449,18 +449,17 @@ def show_stock_selection():
             result = screener.multi_signal_screen(stocks_to_scan)
         elif choice == "8":
             # 潜力股筛选：低价 + 主力买入
-            max_price = input(f"  {Color.BOLD}最高价格上限 (如 50): {Color.RESET}").strip()
-            stocks_to_scan = all_stocks
-            if max_price:
-                max_price_val = float(max_price)
-                stocks_to_scan = all_stocks[
+            max_price_input = input(f"  {Color.BOLD}最高价格上限 (如 50，直接回车不限制): {Color.RESET}").strip()
+            max_price_val = float(max_price_input) if max_price_input else None
+            if max_price_val:
+                all_stocks = all_stocks[
                     (all_stocks["最新价"].notna()) &
                     (all_stocks["最新价"] > 0) &
                     (all_stocks["最新价"] <= max_price_val)
                 ]
-                print(f"  价格限制: ≤ {max_price} 元，剩余 {len(stocks_to_scan)} 只待扫描")
+                print(f"  价格限制: ≤ {max_price_val} 元，剩余 {len(all_stocks)} 只待扫描")
             
-            result = screener.screen_potential_stocks(stocks_to_scan)
+            result = screener.screen_potential_stocks(all_stocks, max_price=max_price_val)
         elif choice == "9":
             return
         else:
