@@ -115,15 +115,20 @@ class EastMoneyFetcher:
         """
         获取实时行情数据
         stock_codes: 股票代码列表，如 ['600519', '000001']，None则获取全部沪深A股
+                      也支持单个代码字符串 '600519'
         """
         if stock_codes:
+            # 支持单个代码字符串或列表
+            if isinstance(stock_codes, str):
+                stock_codes = [stock_codes]
+            
             # 单只或多只股票查询
             secids = []
             for code in stock_codes:
                 secid = self._code_to_secid(code)
                 if secid:
                     secids.append(secid)
-            fields = "f43,f44,f45,f46,f47,f48,f50,f51,f52,f55,f57,f58,f60,f116,f117,f162,f167,f168,f169,f170,f171,f292"
+            fields = "f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f14,f15,f16,f17,f18,f20,f21,f22,f23"
             url = "https://push2.eastmoney.com/api/qt/ulist.np/get"
             params = {
                 "fltt": 2,
@@ -214,23 +219,25 @@ class EastMoneyFetcher:
                 records.append({
                     "代码": item.get("f12", ""),
                     "名称": item.get("f14", ""),
-                    "最新价": self._safe_div(item.get("f43"), 1000),
-                    "最高": self._safe_div(item.get("f44"), 1000),
-                    "最低": self._safe_div(item.get("f45"), 1000),
-                    "今开": self._safe_div(item.get("f46"), 1000),
-                    "成交量": item.get("f47", 0),
-                    "成交额": item.get("f48", 0),
-                    "量比": self._safe_div(item.get("f50"), 1000),
-                    "涨停价": self._safe_div(item.get("f51"), 1000),
-                    "跌停价": self._safe_div(item.get("f52"), 1000),
-                    "换手率": self._safe_div(item.get("f168"), 100),
-                    "市盈率": self._safe_div(item.get("f167"), 100),
-                    "市净率": self._safe_div(item.get("f162"), 100),
-                    "总市值": item.get("f116", 0),
-                    "流通市值": item.get("f117", 0),
-                    "涨跌幅": self._safe_div(item.get("f170"), 100),
-                    "涨跌额": self._safe_div(item.get("f169"), 100),
-                    "振幅": self._safe_div(item.get("f171"), 100),
+                    "最新价": item.get("f2", 0),
+                    "涨跌幅": item.get("f3", 0),
+                    "涨跌额": item.get("f4", 0),
+                    "成交量": item.get("f5", 0),
+                    "成交额": item.get("f6", 0),
+                    "振幅": item.get("f7", 0),
+                    "换手率": item.get("f8", 0),
+                    "市盈率": item.get("f9", 0),
+                    "量比": item.get("f10", 0),
+                    "最高": item.get("f15", 0),
+                    "最低": item.get("f16", 0),
+                    "今开": item.get("f17", 0),
+                    "昨收": item.get("f18", 0),
+                    "总市值": item.get("f20", 0),
+                    "流通市值": item.get("f21", 0),
+                    "涨速": item.get("f22", 0),
+                    "市净率": item.get("f23", 0),
+                    "涨停价": item.get("f15", 0),  # 最高=涨停价
+                    "跌停价": item.get("f17", 0),  # 今开=跌停价
                 })
             except Exception:
                 continue

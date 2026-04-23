@@ -97,6 +97,15 @@ def analyze_stock(stock_code, days=120):
     print(f"\n{Color.BOLD}正在分析 {stock_code}...{Color.RESET}")
 
     try:
+        # 先获取实时行情（获取股票名称和实时数据）
+        realtime = fetcher.get_realtime_quote(stock_code)
+        if realtime.empty:
+            print(f"{Color.RED}  未找到该股票数据，请检查代码是否正确{Color.RESET}")
+            return
+        
+        rt = realtime.iloc[0]
+        stock_name = rt.get('名称', stock_code)
+        
         # 获取K线数据
         kline = fetcher.get_kline(stock_code, count=days)
         if kline.empty:
@@ -110,25 +119,40 @@ def analyze_stock(stock_code, days=120):
 
         # ===== 1. 基本信息 =====
         latest = kline.iloc[-1]
-        name = latest.get("名称", stock_code)
         date = latest.get("日期", "")
         date_str = date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date)
 
         change = latest.get("涨跌幅", 0)
+        if change == 0:
+            change = rt.get('涨跌幅', 0)
+        
         color = Color.RED if change > 0 else Color.GREEN if change < 0 else Color.RESET
         sign = "+" if change > 0 else ""
 
         print(f"\n{Color.BOLD}{Color.CYAN}{'═' * 50}{Color.RESET}")
-        print(f"{Color.BOLD}{Color.CYAN}  {name} ({stock_code})  {date_str}{Color.RESET}")
+        print(f"{Color.BOLD}{Color.CYAN}  {stock_name} ({stock_code})  {date_str}{Color.RESET}")
         print(f"{Color.BOLD}{Color.CYAN}{'═' * 50}{Color.RESET}")
 
-        print(f"\n  💰 当前价格: {color}{latest['收盘']:.2f}元{Color.RESET}  "
+        # 使用实时行情数据
+        current_price = rt.get('最新价', latest['收盘'])
+        high_price = rt.get('最高', latest['最高'])
+        low_price = rt.get('最低', latest['最低'])
+        volume = rt.get('成交量', latest['成交量'])  # 单位：手
+        turnover = rt.get('成交额', 0)  # 单位：元
+        turnover_rate = rt.get('换手率', 0)
+        
+        # 成交量格式化：显示为 XX万手（东方财富接口返回的是手）
+        if volume >= 10000:
+            vol_str = f"{volume/10000:.0f}万手"
+        else:
+            vol_str = f"{volume}手"
+        
+        print(f"\n  💰 当前价格: {color}{current_price:.2f}元{Color.RESET}  "
               f"{color}{sign}{change:.2f}%{Color.RESET}")
-        print(f"  📊 今日区间: {latest['最低']:.2f} ~ {latest['最高']:.2f}元  "
-              f"振幅 {latest.get('振幅', 0):.1f}%")
-        print(f"  🔄 成交量: {latest['成交量'] / 10000:.0f}万手  "
-              f"成交额: {latest['成交额'] / 1e8:.2f}亿  "
-              f"换手: {latest.get('换手率', 0):.1f}%")
+        print(f"  📊 今日区间: {low_price:.2f} ~ {high_price:.2f}元  "
+              f"振幅 {rt.get('振幅', 0):.1f}%")
+        print(f"  🔄 成交量: {vol_str}  成交额: {turnover / 1e8:.2f}亿  "
+              f"换手: {turnover_rate:.1f}%")
 
         # ===== 2. 大白话分析 =====
         print(f"\n{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
@@ -682,6 +706,16 @@ def analyze_multiple_stocks(codes):
     print(f"{Color.BOLD}{Color.CYAN}  多股同屏分析 ({len(codes)} 只){Color.RESET}")
     print(f"{Color.BOLD}{Color.CYAN}{'='*60}{Color.RESET}\n")
     
+    # 批量获取股票名称
+    stock_names = {}
+    try:
+        quotes = fetcher.get_realtime_quote(codes)
+        if not quotes.empty:
+            for _, row in quotes.iterrows():
+                stock_names[row['代码']] = row['名称']
+    except Exception:
+        pass
+    
     results = []
     total = len(codes)
     
@@ -703,7 +737,8 @@ def analyze_multiple_stocks(codes):
             kline = analyze_signals(kline)
             latest = kline.iloc[-1]
             
-            name = latest.get("名称", code)
+            # 使用实时行情获取的名称
+            name = stock_names.get(code, code)
             price = latest["收盘"]
             change = latest.get("涨跌幅", 0)
             signals = latest.get("信号", [])
