@@ -663,7 +663,7 @@ SCREEN_SCENARIOS = {
         "min_change": 1,
         "min_turnover": 3,
         "min_volume_ratio": 3,
-        "include_limit_up": False,
+        "include_limit_up": False,  # 不包含涨停
         "max_price": 50,
     },
     "3": {
@@ -671,7 +671,7 @@ SCREEN_SCENARIOS = {
         "min_change": 2,
         "min_turnover": 5,
         "min_volume_ratio": 2,
-        "include_limit_up": True,
+        "include_limit_up": False,  # 排除涨停，找还没涨停但要启动的
         "max_price": 20,
     },
     "4": {
@@ -679,7 +679,7 @@ SCREEN_SCENARIOS = {
         "min_change": 3,
         "min_turnover": 5,
         "min_volume_ratio": 2,
-        "include_limit_up": True,
+        "include_limit_up": False,  # 排除涨停
         "max_price": 100,
         "prefer_small_cap": True,
     },
