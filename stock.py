@@ -39,6 +39,7 @@ from fetcher import fetcher
 from indicators import calc_all_indicators, analyze_signals, generate_analysis_summary
 from patterns import identify_patterns
 from screener import screener
+from watchlist import show_watchlist_menu, list_stocks
 from display import (
     print_table, print_kline_chart, print_indicator_chart,
     print_money_flow_chart, print_market_overview, print_stock_detail,
@@ -663,10 +664,11 @@ def print_menu():
   ├─────────────────────────────┤
   │  1. 📊 市场概览             │
   │  2. 📈 个股分析             │
-  │  3. 🔍 智能选股             │
-  │  4. ⚡ 快速筛选             │
-  │  5. 🏭 板块分析             │
-  │  6. 🔎 搜索股票             │
+  │  3. ⭐ 自选股管理           │
+  │  4. 🔍 智能选股             │
+  │  5. ⚡ 快速筛选             │
+  │  6. 🏭 板块分析             │
+  │  7. 🔎 搜索股票             │
   │  0. 退出                   │
   └─────────────────────────────┘{Color.RESET}
 """)
@@ -753,7 +755,15 @@ def main():
     # 如果命令行直接传入股票代码
     if len(sys.argv) > 1:
         arg = sys.argv[1]
-        if arg.lower() == "search" and len(sys.argv) > 2:
+        if arg.lower() in ("w", "watch", "自选"):
+            # 分析自选股
+            stocks = list_stocks()
+            if stocks:
+                analyze_multiple_stocks(stocks)
+            else:
+                print(f"\n  {Color.YELLOW}自选列表为空，请先添加自选股{Color.RESET}")
+                print(f"  {Color.DIM}运行 python stock.py 后选择 3.自选股管理 添加{Color.RESET}")
+        elif arg.lower() == "search" and len(sys.argv) > 2:
             search_stock(sys.argv[2])
         elif arg.lower() == "market":
             show_market_overview()
@@ -768,7 +778,7 @@ def main():
     # 交互式菜单
     while True:
         print_menu()
-        choice = input(f"  {Color.BOLD}请选择功能 (0-6): {Color.RESET}").strip()
+        choice = input(f"  {Color.BOLD}请选择功能 (0-7): {Color.RESET}").strip()
 
         if choice == "0":
             print(f"\n{Color.CYAN}  再见！祝投资顺利！👋{Color.RESET}\n")
@@ -784,12 +794,18 @@ def main():
                 else:
                     analyze_stock(code)
         elif choice == "3":
-            show_stock_selection()
+            # 自选股管理
+            watchlist_stocks = show_watchlist_menu()
+            if watchlist_stocks:
+                # 用户选择了"分析我的自选股"
+                analyze_multiple_stocks(watchlist_stocks)
         elif choice == "4":
-            show_quick_screen()
+            show_stock_selection()
         elif choice == "5":
-            show_sector_analysis()
+            show_quick_screen()
         elif choice == "6":
+            show_sector_analysis()
+        elif choice == "7":
             keyword = input(f"\n  {Color.BOLD}请输入搜索关键词 (代码或名称): {Color.RESET}").strip()
             if keyword:
                 search_stock(keyword)
