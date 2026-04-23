@@ -400,10 +400,11 @@ def show_stock_selection():
     print(f"  5. RSI超卖选股")
     print(f"  6. 触及布林下轨选股")
     print(f"  7. 多重信号选股（2个以上买入信号）")
-    print(f"  8. 返回主菜单")
+    print(f"  8. 潜力股筛选（低价+主力买入）")
+    print(f"  9. 返回主菜单")
     print()
 
-    choice = input(f"  {Color.BOLD}请选择 (1-8): {Color.RESET}").strip()
+    choice = input(f"  {Color.BOLD}请选择 (1-9): {Color.RESET}").strip()
 
     try:
         print(f"\n{Color.BOLD}正在获取全市场股票列表...{Color.RESET}")
@@ -447,6 +448,20 @@ def show_stock_selection():
             
             result = screener.multi_signal_screen(stocks_to_scan)
         elif choice == "8":
+            # 潜力股筛选：低价 + 主力买入
+            max_price = input(f"  {Color.BOLD}最高价格上限 (如 50): {Color.RESET}").strip()
+            stocks_to_scan = all_stocks
+            if max_price:
+                max_price_val = float(max_price)
+                stocks_to_scan = all_stocks[
+                    (all_stocks["最新价"].notna()) &
+                    (all_stocks["最新价"] > 0) &
+                    (all_stocks["最新价"] <= max_price_val)
+                ]
+                print(f"  价格限制: ≤ {max_price} 元，剩余 {len(stocks_to_scan)} 只待扫描")
+            
+            result = screener.screen_potential_stocks(stocks_to_scan)
+        elif choice == "9":
             return
         else:
             print(f"{Color.YELLOW}  无效选择{Color.RESET}")

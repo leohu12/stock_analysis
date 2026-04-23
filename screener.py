@@ -367,5 +367,127 @@ class StockScreener:
             result_df = result_df.sort_values("买入信号数", ascending=False)
         return result_df.head(top_n) if not result_df.empty else pd.DataFrame()
 
+    def screen_potential_stocks(self, df, top_n=30, max_scan=500):
+        """
+        潜力股筛选：价格偏低 + 主力资金持续买入
+        条件：
+        1. 价格在布林中轨以下（股价相对不高）
+        2. 近5日主力资金净流入为正
+        3. RSI 在 30-60 之间（不是超买也不是超卖）
+        """
+        import signal
+        import threading
+        results = []
+        codes = df["代码"].tolist()[:max_scan]
+        total = len(codes)
+        stopped = threading.Event()
+        
+        def signal_handler(sig, frame):
+            if not stopped.is_set():
+                stopped.set()
+                print(f"\n  {Color.YELLOW}用户中断，正在保存已扫描结果...{Color.RESET}")
+        original_handler = signal.signal(signal.SIGINT, signal_handler)
+        
+        print(f"  正在扫描潜力股 ({total}只)，按 Ctrl+C 可中断...")
+        
+        def check(code):
+            if stopped.is_set():
+                return None
+            try:
+                # 获取K线数据和资金流向
+                kline = fetcher.get_kline(code, count=60)
+                if kline.empty or len(kline) < 30:
+                    return None
+                money_flow = fetcher.get_money_flow(code)
+                
+                kline = calc_all_indicators(kline)
+                latest = kline.iloc[-1]
+                
+                # 条件1: 价格在布林中轨以下
+                price_in_lower_half = False
+                if pd.notna(latest.get("BOLL_MID")) and pd.notna(latest.get("BOLL_LOW")):
+                    boll_mid = latest["BOLL_MID"]
+                    boll_low = latest["BOLL_LOW"]
+                    price = latest["收盘"]
+                    # 价格在布林下轨和中轨之间
+                    if boll_low <= price <= boll_mid:
+                        price_in_lower_half = True
+                    # 或者价格刚刚从下方回升（突破布林下轨）
+                    elif price > boll_low and price < boll_low * 1.03:
+                        price_in_lower_half = True
+                
+                # 条件2: 近5日主力资金净流入为正
+                main_inflow_positive = False
+                main_inflow_amount = 0
+                if not money_flow.empty and len(money_flow) >= 3:
+                    recent_flows = money_flow.tail(5)
+                    main_inflow_amount = recent_flows["主力净流入"].sum()
+                    inflow_days = len(recent_flows[recent_flows["主力净流入"] > 0])
+                    if main_inflow_amount > 0 and inflow_days >= 2:
+                        main_inflow_positive = True
+                
+                # 条件3: RSI 在 30-60 之间
+                rsi_ok = False
+                if pd.notna(latest.get("RSI6")):
+                    rsi = latest["RSI6"]
+                    if 25 <= rsi <= 60:  # 放宽到25-60
+                        rsi_ok = True
+                
+                # 综合评分：满足2个条件以上
+                score = 0
+                reasons = []
+                if price_in_lower_half:
+                    score += 1
+                    reasons.append("价格低位")
+                if main_inflow_positive:
+                    score += 2  # 主力买入权重更高
+                    reasons.append(f"主力净流入{main_inflow_amount/10000:.0f}万")
+                if rsi_ok:
+                    score += 1
+                    reasons.append(f"RSI适中")
+                
+                if score >= 2:
+                    return {
+                        "代码": code,
+                        "名称": df[df["代码"] == code]["名称"].values[0] if code in df["代码"].values else "",
+                        "最新价": df[df["代码"] == code]["最新价"].values[0] if code in df["代码"].values else 0,
+                        "涨跌幅": df[df["代码"] == code]["涨跌幅"].values[0] if code in df["代码"].values else 0,
+                        "综合评分": score,
+                        "入选原因": "/".join(reasons),
+                        "RSI6": round(latest.get("RSI6", 0), 1) if pd.notna(latest.get("RSI6")) else None,
+                        "布林位置": f"{latest['收盘']:.2f}" if pd.notna(latest.get("BOLL_MID")) else "-",
+                    }
+            except Exception:
+                pass
+            return None
+
+        completed = 0
+        found_count = 0
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(check, code): code for code in codes}
+            print(f"  已扫描 0/{total} 只...", end="\r")
+            for future in as_completed(futures):
+                if stopped.is_set():
+                    future.cancel()
+                    continue
+                completed += 1
+                result = future.result()
+                if result:
+                    results.append(result)
+                    found_count += 1
+                print(f"  已扫描 {completed}/{total} 只... 找到 {found_count} 只", end="\r")
+        
+        signal.signal(signal.SIGINT, original_handler)
+        
+        if stopped.is_set():
+            print(f"\n  {Color.YELLOW}扫描被中断，已找到 {len(results)} 只符合条件{Color.RESET}")
+        else:
+            print(f"\n  扫描完成，找到 {len(results)} 只符合条件")
+        
+        result_df = pd.DataFrame(results)
+        if not result_df.empty:
+            result_df = result_df.sort_values("综合评分", ascending=False)
+        return result_df.head(top_n) if not result_df.empty else pd.DataFrame()
+
 
 screener = StockScreener()
