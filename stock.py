@@ -19,7 +19,12 @@ A股股票分析工具 - 命令行版
 
 import sys
 import os
+import io
 import time
+
+# Windows 终端 UTF-8 输出
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 # 启动时清除代理环境变量（防止VPN/代理软件干扰国内API访问）
 for _k in ['http_proxy','https_proxy','HTTP_PROXY','HTTPS_PROXY','all_proxy','ALL_PROXY']:
@@ -667,6 +672,80 @@ def print_menu():
 """)
 
 
+def analyze_multiple_stocks(codes):
+    """同时分析多只股票（简洁同屏版）"""
+    import pandas as pd
+    
+    print(f"\n{Color.BOLD}{Color.CYAN}{'='*60}{Color.RESET}")
+    print(f"{Color.BOLD}{Color.CYAN}  多股同屏分析 ({len(codes)} 只){Color.RESET}")
+    print(f"{Color.BOLD}{Color.CYAN}{'='*60}{Color.RESET}\n")
+    
+    results = []
+    for code in codes:
+        code = code.strip()
+        if not code:
+            continue
+        
+        try:
+            kline = fetcher.get_kline(code, count=120)
+            if kline.empty:
+                print(f"  {Color.YELLOW}{code}: 未找到数据{Color.RESET}")
+                continue
+            
+            kline = calc_all_indicators(kline)
+            kline = analyze_signals(kline)
+            latest = kline.iloc[-1]
+            
+            name = latest.get("名称", code)
+            price = latest["收盘"]
+            change = latest.get("涨跌幅", 0)
+            signals = latest.get("信号", [])
+            buy_signals = [s for s in signals if "🟢" in s]
+            sell_signals = [s for s in signals if "🔴" in s]
+            
+            # 计算关键价位
+            support, resistance, buy_price, sell_price = _calc_price_levels(latest)
+            
+            # 计算上涨空间
+            up_space = ((sell_price - price) / price) * 100 if price > 0 else 0
+            
+            # 评分
+            score = _calc_score(latest, buy_signals, sell_signals)
+            
+            color = Color.RED if change > 0 else Color.GREEN if change < 0 else Color.RESET
+            sign = "+" if change > 0 else ""
+            
+            # 判断是否涨停
+            is_limit_up = abs(change) >= 9.9
+            
+            results.append({
+                "代码": code,
+                "名称": name[:6],
+                "现价": f"{price:.2f}",
+                "涨幅": f"{color}{sign}{change:.2f}%{Color.RESET}",
+                "评分": f"{score:.0f}",
+                "买点": f"{Color.GREEN}{buy_price:.2f}{Color.RESET}" if not is_limit_up else "-",
+                "卖点": f"{Color.RED}{sell_price:.2f}{Color.RESET}" if not is_limit_up else f"{Color.RED}{sell_price:.2f}{Color.RESET}",
+                "空间": f"{Color.RED}+{up_space:.0f}%{Color.RESET}" if up_space > 0 else f"{Color.GREEN}{up_space:.0f}%{Color.RESET}",
+                "信号": f"买{len(buy_signals)}" if buy_signals else ("卖" if sell_signals else "中性"),
+            })
+        except Exception as e:
+            print(f"  {Color.YELLOW}{code}: 获取失败{Color.RESET}")
+            continue
+    
+    if results:
+        # 打印表格
+        print(f"{Color.BOLD}  {'代码':<8} {'名称':<6} {'现价':>7} {'涨幅':>8} {'评分':>4} {'买点':>7} {'卖点':>7} {'空间':>6} 信号{Color.RESET}")
+        print(f"  {Color.DIM}{'─'*65}{Color.RESET}")
+        for r in results:
+            print(f"  {r['代码']:<8} {r['名称']:<6} {r['现价']:>7} {r['涨幅']:>16} {r['评分']:>4} {r['买点']:>13} {r['卖点']:>11} {r['空间']:>8} {r['信号']}")
+        
+        print(f"\n  {Color.DIM}买点=建议买入价，卖点=目标卖出价，空间=潜在上涨空间{Color.RESET}")
+        print(f"  {Color.DIM}涨停股买点显示'-'，建议关注次日机会{Color.RESET}")
+    else:
+        print(f"\n  {Color.YELLOW}没有获取到任何数据{Color.RESET}")
+
+
 def main():
     """主函数"""
     print_banner()
@@ -678,6 +757,10 @@ def main():
             search_stock(sys.argv[2])
         elif arg.lower() == "market":
             show_market_overview()
+        elif "," in arg:
+            # 多股票同屏分析
+            codes = [c.strip() for c in arg.split(",") if c.strip()]
+            analyze_multiple_stocks(codes)
         else:
             analyze_stock(arg)
         return
@@ -693,9 +776,13 @@ def main():
         elif choice == "1":
             show_market_overview()
         elif choice == "2":
-            code = input(f"\n  {Color.BOLD}请输入股票代码 (如 600519): {Color.RESET}").strip()
+            code = input(f"\n  {Color.BOLD}请输入股票代码 (如 600519，多个用逗号分隔): {Color.RESET}").strip()
             if code:
-                analyze_stock(code)
+                if "," in code:
+                    codes = [c.strip() for c in code.split(",") if c.strip()]
+                    analyze_multiple_stocks(codes)
+                else:
+                    analyze_stock(code)
         elif choice == "3":
             show_stock_selection()
         elif choice == "4":
