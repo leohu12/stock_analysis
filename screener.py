@@ -361,7 +361,7 @@ class StockScreener:
         total = len(codes_to_scan)
         
         if total == 0:
-            print(f"  {Color.YELLOW}所有股票都已扫描过，请选择"重新开始"{Color.RESET}")
+            print(f"  {Color.YELLOW}所有股票都已扫描过，请选择「重新开始」{Color.RESET}")
             return pd.DataFrame()
         
         stopped = threading.Event()
@@ -479,7 +479,7 @@ class StockScreener:
         total = len(codes_to_scan)
         
         if total == 0:
-            print(f"  {Color.YELLOW}所有股票都已扫描过，请选择"重新开始"{Color.RESET}")
+            print(f"  {Color.YELLOW}所有股票都已扫描过，请选择「重新开始」{Color.RESET}")
             return pd.DataFrame()
         
         stopped = threading.Event()
