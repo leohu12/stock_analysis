@@ -331,7 +331,7 @@ class StockScreener:
 
     # ==================== 综合选股 ====================
 
-    def multi_signal_screen(self, df, top_n=30, max_scan=2000):
+    def multi_signal_screen(self, df, top_n=30, max_scan=10000):
         """多重信号选股：同时出现2个以上买入信号"""
         import signal
         import threading
@@ -422,8 +422,8 @@ class StockScreener:
                     found_count += 1
                 print(f"  已扫描 {completed}/{total} 只... 找到 {found_count} 只", end="\r")
                 
-                # 每扫描10只保存一次进度（实时保存，不丢失）
-                if len(batch_scanned) % 10 == 0:
+                # 每扫描20只保存一次进度
+                if len(batch_scanned) % 20 == 0:
                     progress.save(scanned_codes + batch_scanned)
         
         # 最终保存进度
@@ -443,7 +443,7 @@ class StockScreener:
             result_df = result_df.sort_values("买入信号数", ascending=False)
         return result_df.head(top_n) if not result_df.empty else pd.DataFrame()
 
-    def screen_potential_stocks(self, df, top_n=30, max_scan=2000, max_price=None):
+    def screen_potential_stocks(self, df, top_n=30, max_scan=10000, max_price=None):
         """
         潜力股筛选：价格偏低 + 主力资金持续买入
         条件：
@@ -614,8 +614,8 @@ class StockScreener:
                     found_count += 1
                 print(f"  已扫描 {completed}/{total} 只... 找到 {found_count} 只", end="\r")
                 
-                # 每扫描10只保存一次进度（实时保存，不丢失）
-                if len(batch_scanned) % 10 == 0:
+                # 每扫描20只保存一次进度
+                if len(batch_scanned) % 20 == 0:
                     progress.save(scanned_codes + batch_scanned)
         
         # 最终保存进度
