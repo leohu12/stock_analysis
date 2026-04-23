@@ -422,8 +422,8 @@ class StockScreener:
                     found_count += 1
                 print(f"  已扫描 {completed}/{total} 只... 找到 {found_count} 只", end="\r")
                 
-                # 每扫描50只保存一次进度
-                if len(batch_scanned) % 50 == 0:
+                # 每扫描10只保存一次进度（实时保存，不丢失）
+                if len(batch_scanned) % 10 == 0:
                     progress.save(scanned_codes + batch_scanned)
         
         # 最终保存进度
@@ -614,8 +614,8 @@ class StockScreener:
                     found_count += 1
                 print(f"  已扫描 {completed}/{total} 只... 找到 {found_count} 只", end="\r")
                 
-                # 每扫描50只保存一次进度
-                if len(batch_scanned) % 50 == 0:
+                # 每扫描10只保存一次进度（实时保存，不丢失）
+                if len(batch_scanned) % 10 == 0:
                     progress.save(scanned_codes + batch_scanned)
         
         # 最终保存进度
