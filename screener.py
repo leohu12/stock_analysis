@@ -4,6 +4,8 @@
 基于技术指标和策略条件筛选股票
 """
 
+import os
+import json
 import pandas as pd
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -12,6 +14,44 @@ import threading
 from fetcher import fetcher
 from indicators import calc_all_indicators, analyze_signals
 from display import Color
+
+# 进度文件目录
+PROGRESS_DIR = os.path.join(os.path.dirname(__file__), ".scan_progress")
+
+
+class ScanProgress:
+    """扫描进度管理器"""
+    
+    def __init__(self, strategy_name):
+        self.strategy_name = strategy_name
+        self.file_path = os.path.join(PROGRESS_DIR, f"{strategy_name}.json")
+    
+    def load(self):
+        """加载上次扫描位置"""
+        if os.path.exists(self.file_path):
+            try:
+                with open(self.file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                return data.get("scanned_codes", [])
+            except Exception:
+                pass
+        return []
+    
+    def save(self, scanned_codes):
+        """保存扫描位置"""
+        os.makedirs(PROGRESS_DIR, exist_ok=True)
+        try:
+            with open(self.file_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    "scanned_codes": scanned_codes,
+                }, f, ensure_ascii=False)
+        except Exception:
+            pass
+    
+    def clear(self):
+        """清除进度，重新开始"""
+        if os.path.exists(self.file_path):
+            os.remove(self.file_path)
 
 
 class StockScreener:
@@ -295,19 +335,45 @@ class StockScreener:
         """多重信号选股：同时出现2个以上买入信号"""
         import signal
         import threading
+        
         results = []
-        codes = df["代码"].tolist()[:max_scan]
-        total = len(codes)
+        all_codes = df["代码"].tolist()
+        
+        # 断点续扫：加载上次进度
+        progress = ScanProgress("multi_signal")
+        scanned_codes = progress.load()
+        
+        # 如果有进度，询问用户
+        if scanned_codes:
+            print(f"\n  {Color.CYAN}发现上次扫描进度，共已扫描 {len(scanned_codes)} 只{Color.RESET}")
+            choice = input(f"  1. 继续扫描  2. 重新开始 (默认1): ").strip() or "1"
+            if choice == "2":
+                scanned_codes = []
+                progress.clear()
+                print(f"  已重置进度，重新开始扫描")
+            else:
+                print(f"  继续从上次位置扫描")
+        else:
+            scanned_codes = []
+        
+        # 过滤掉已扫描的股票
+        codes_to_scan = [c for c in all_codes if c not in scanned_codes][:max_scan]
+        total = len(codes_to_scan)
+        
+        if total == 0:
+            print(f"  {Color.YELLOW}所有股票都已扫描过，请选择"重新开始"{Color.RESET}")
+            return pd.DataFrame()
+        
         stopped = threading.Event()
         
         # Ctrl+C 中断处理
         def signal_handler(sig, frame):
             if not stopped.is_set():
                 stopped.set()
-                print(f"\n  {Color.YELLOW}用户中断，正在保存已扫描结果...{Color.RESET}")
+                print(f"\n  {Color.YELLOW}用户中断，正在保存进度...{Color.RESET}")
         original_handler = signal.signal(signal.SIGINT, signal_handler)
         
-        print(f"  正在扫描多重信号 ({total}只)，按 Ctrl+C 可中断...")
+        print(f"  本次扫描 {total} 只，按 Ctrl+C 可中断...")
         
         def check(code):
             if stopped.is_set():
@@ -338,29 +404,39 @@ class StockScreener:
 
         completed = 0
         found_count = 0
+        batch_scanned = []  # 本次扫描的代码
+        
         with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {executor.submit(check, code): code for code in codes}
-            # 立即打印开始信息
+            futures = {executor.submit(check, code): code for code in codes_to_scan}
             print(f"  已扫描 0/{total} 只...", end="\r")
             for future in as_completed(futures):
                 if stopped.is_set():
                     future.cancel()
                     continue
+                code = futures[future]
                 completed += 1
+                batch_scanned.append(code)
                 result = future.result()
                 if result:
                     results.append(result)
                     found_count += 1
-                # 每完成一个就更新进度
                 print(f"  已扫描 {completed}/{total} 只... 找到 {found_count} 只", end="\r")
+                
+                # 每扫描50只保存一次进度
+                if len(batch_scanned) % 50 == 0:
+                    progress.save(scanned_codes + batch_scanned)
+        
+        # 最终保存进度
+        progress.save(scanned_codes + batch_scanned)
         
         # 恢复信号处理
         signal.signal(signal.SIGINT, original_handler)
         
+        total_scanned = len(scanned_codes) + len(batch_scanned)
         if stopped.is_set():
-            print(f"  {Color.YELLOW}扫描被中断，已找到 {len(results)} 只符合条件{Color.RESET}")
+            print(f"\n  {Color.YELLOW}扫描被中断，已保存进度 ({total_scanned}只已扫描)，找到 {len(results)} 只符合条件{Color.RESET}")
         else:
-            print(f"  扫描完成，找到 {len(results)} 只符合条件")
+            print(f"\n  扫描完成 (共 {total_scanned} 只)，找到 {len(results)} 只符合条件")
         
         result_df = pd.DataFrame(results)
         if not result_df.empty:
@@ -377,18 +453,44 @@ class StockScreener:
         """
         import signal
         import threading
+        
         results = []
-        codes = df["代码"].tolist()[:max_scan]
-        total = len(codes)
+        all_codes = df["代码"].tolist()
+        
+        # 断点续扫：加载上次进度
+        progress = ScanProgress("potential_stocks")
+        scanned_codes = progress.load()
+        
+        # 如果有进度，询问用户
+        if scanned_codes:
+            print(f"\n  {Color.CYAN}发现上次扫描进度，共已扫描 {len(scanned_codes)} 只{Color.RESET}")
+            choice = input(f"  1. 继续扫描  2. 重新开始 (默认1): ").strip() or "1"
+            if choice == "2":
+                scanned_codes = []
+                progress.clear()
+                print(f"  已重置进度，重新开始扫描")
+            else:
+                print(f"  继续从上次位置扫描")
+        else:
+            scanned_codes = []
+        
+        # 过滤掉已扫描的股票
+        codes_to_scan = [c for c in all_codes if c not in scanned_codes][:max_scan]
+        total = len(codes_to_scan)
+        
+        if total == 0:
+            print(f"  {Color.YELLOW}所有股票都已扫描过，请选择"重新开始"{Color.RESET}")
+            return pd.DataFrame()
+        
         stopped = threading.Event()
         
         def signal_handler(sig, frame):
             if not stopped.is_set():
                 stopped.set()
-                print(f"\n  {Color.YELLOW}用户中断，正在保存已扫描结果...{Color.RESET}")
+                print(f"\n  {Color.YELLOW}用户中断，正在保存进度...{Color.RESET}")
         original_handler = signal.signal(signal.SIGINT, signal_handler)
         
-        print(f"  正在扫描潜力股 ({total}只)，按 Ctrl+C 可中断...")
+        print(f"  本次扫描 {total} 只，按 Ctrl+C 可中断...")
         
         def check(code):
             if stopped.is_set():
@@ -463,26 +565,38 @@ class StockScreener:
 
         completed = 0
         found_count = 0
+        batch_scanned = []  # 本次扫描的代码
+        
         with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {executor.submit(check, code): code for code in codes}
+            futures = {executor.submit(check, code): code for code in codes_to_scan}
             print(f"  已扫描 0/{total} 只...", end="\r")
             for future in as_completed(futures):
                 if stopped.is_set():
                     future.cancel()
                     continue
+                code = futures[future]
                 completed += 1
+                batch_scanned.append(code)
                 result = future.result()
                 if result:
                     results.append(result)
                     found_count += 1
                 print(f"  已扫描 {completed}/{total} 只... 找到 {found_count} 只", end="\r")
+                
+                # 每扫描50只保存一次进度
+                if len(batch_scanned) % 50 == 0:
+                    progress.save(scanned_codes + batch_scanned)
+        
+        # 最终保存进度
+        progress.save(scanned_codes + batch_scanned)
         
         signal.signal(signal.SIGINT, original_handler)
         
+        total_scanned = len(scanned_codes) + len(batch_scanned)
         if stopped.is_set():
-            print(f"\n  {Color.YELLOW}扫描被中断，已找到 {len(results)} 只符合条件{Color.RESET}")
+            print(f"\n  {Color.YELLOW}扫描被中断，已保存进度 ({total_scanned}只已扫描)，找到 {len(results)} 只符合条件{Color.RESET}")
         else:
-            print(f"\n  扫描完成，找到 {len(results)} 只符合条件")
+            print(f"\n  扫描完成 (共 {total_scanned} 只)，找到 {len(results)} 只符合条件")
         
         result_df = pd.DataFrame(results)
         if not result_df.empty:
