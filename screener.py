@@ -5,6 +5,7 @@
 """
 
 import os
+import sys
 import json
 import pandas as pd
 import numpy as np
@@ -17,6 +18,18 @@ from display import Color
 
 # 进度文件目录
 PROGRESS_DIR = os.path.join(os.path.dirname(__file__), ".scan_progress")
+
+
+def check_esc_key(stopped_event):
+    """检测 ESC 键是否被按下（Windows）"""
+    if sys.platform == 'win32':
+        import msvcrt
+        if msvcrt.kbhit():
+            key = msvcrt.getch()
+            if key == b'\x1b':  # ESC 键
+                if not stopped_event.is_set():
+                    stopped_event.set()
+                    print(f"\n  {Color.YELLOW}用户按 ESC 中断，正在保存进度...{Color.RESET}")
 
 
 class ScanProgress:
@@ -366,14 +379,7 @@ class StockScreener:
         
         stopped = threading.Event()
         
-        # Ctrl+C 中断处理
-        def signal_handler(sig, frame):
-            if not stopped.is_set():
-                stopped.set()
-                print(f"\n  {Color.YELLOW}用户中断，正在保存进度...{Color.RESET}")
-        original_handler = signal.signal(signal.SIGINT, signal_handler)
-        
-        print(f"  本次扫描 {total} 只，按 Ctrl+C 可中断...")
+        print(f"  本次扫描 {total} 只，按 ESC 可中断...")
         
         def check(code):
             if stopped.is_set():
@@ -410,6 +416,11 @@ class StockScreener:
             futures = {executor.submit(check, code): code for code in codes_to_scan}
             print(f"  已扫描 0/{total} 只...", end="\r")
             for future in as_completed(futures):
+                if stopped.is_set():
+                    future.cancel()
+                    continue
+                # 检测 ESC 键
+                check_esc_key(stopped)
                 if stopped.is_set():
                     future.cancel()
                     continue
@@ -494,13 +505,7 @@ class StockScreener:
         
         stopped = threading.Event()
         
-        def signal_handler(sig, frame):
-            if not stopped.is_set():
-                stopped.set()
-                print(f"\n  {Color.YELLOW}用户中断，正在保存进度...{Color.RESET}")
-        original_handler = signal.signal(signal.SIGINT, signal_handler)
-        
-        print(f"  本次扫描 {total} 只，按 Ctrl+C 可中断...")
+        print(f"  本次扫描 {total} 只，按 ESC 可中断...")
         
         def check(code):
             if stopped.is_set():
@@ -605,6 +610,11 @@ class StockScreener:
                 if stopped.is_set():
                     future.cancel()
                     continue
+                # 检测 ESC 键
+                check_esc_key(stopped)
+                if stopped.is_set():
+                    future.cancel()
+                    continue
                 code = futures[future]
                 completed += 1
                 batch_scanned.append(code)
@@ -620,8 +630,6 @@ class StockScreener:
         
         # 最终保存进度
         progress.save(scanned_codes + batch_scanned)
-        
-        signal.signal(signal.SIGINT, original_handler)
         
         total_scanned = len(scanned_codes) + len(batch_scanned)
         if stopped.is_set():
