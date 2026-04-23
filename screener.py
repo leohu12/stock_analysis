@@ -644,3 +644,320 @@ class StockScreener:
 
 
 screener = StockScreener()
+
+
+# ==================== 实时扫描（不依赖历史K线） ====================
+
+# 预设场景配置
+SCREEN_SCENARIOS = {
+    "1": {
+        "name": "追热点（今天涨得猛的）",
+        "min_change": 5,
+        "min_turnover": 5,
+        "min_volume_ratio": 2,
+        "include_limit_up": True,
+        "max_price": 100,
+    },
+    "2": {
+        "name": "找补涨（还没大涨但开始放量）",
+        "min_change": 1,
+        "min_turnover": 3,
+        "min_volume_ratio": 3,
+        "include_limit_up": False,
+        "max_price": 50,
+    },
+    "3": {
+        "name": "低价埋伏（低价股 + 放量）",
+        "min_change": 2,
+        "min_turnover": 5,
+        "min_volume_ratio": 2,
+        "include_limit_up": True,
+        "max_price": 20,
+    },
+    "4": {
+        "name": "小市值（盘子小，弹性大）",
+        "min_change": 3,
+        "min_turnover": 5,
+        "min_volume_ratio": 2,
+        "include_limit_up": True,
+        "max_price": 100,
+        "prefer_small_cap": True,
+    },
+}
+
+
+def screen_realtime_simple():
+    """
+    简单的实时扫描（预设场景，普通人都能看懂）
+    """
+    print(f"\n{'='*60}")
+    print(f"{Color.CYAN}[实时选股]{Color.RESET} - 找今天值得关注的好股票")
+    print(f"{'='*60}")
+    print()
+    print(f"  {Color.BOLD}你想找什么样的股票？{Color.RESET}")
+    print()
+    for key, scenario in SCREEN_SCENARIOS.items():
+        print(f"  {key}. {scenario['name']}")
+    print()
+    print(f"  0. 自定义条件")
+    print(f"  q. 取消")
+    print()
+    
+    choice = input(f"  {Color.BOLD}请选择 (1-4, 0自定义, q取消): {Color.RESET}").strip().lower()
+    
+    if choice == 'q' or choice == '':
+        print("  取消操作")
+        return pd.DataFrame()
+    
+    # 使用预设场景
+    if choice in SCREEN_SCENARIOS:
+        scenario = SCREEN_SCENARIOS[choice]
+        return screen_realtime(
+            top_n=30,
+            min_price=1,
+            max_price=scenario.get("max_price", 100),
+            min_change=scenario["min_change"],
+            min_turnover=scenario["min_turnover"],
+            min_volume_ratio=scenario["min_volume_ratio"],
+            include_limit_up=scenario["include_limit_up"],
+            prefer_small_cap=scenario.get("prefer_small_cap", False)
+        )
+    
+    # 自定义
+    if choice == "0":
+        return screen_realtime_custom()
+    
+    print(f"{Color.YELLOW}  无效选择{Color.RESET}")
+    return pd.DataFrame()
+
+
+def screen_realtime_custom():
+    """
+    自定义实时扫描
+    """
+    print(f"\n{Color.BOLD}[自定义筛选条件]{Color.RESET}")
+    print("(直接回车使用推荐值)")
+    print()
+    
+    # 价格
+    max_price_input = input(f"  最高价格 (回车推荐50元以内): ").strip()
+    max_price = float(max_price_input) if max_price_input else 50
+    
+    # 涨幅
+    print(f"  {Color.DIM}(涨幅越高说明越强势，但也可能追高){Color.RESET}")
+    change_input = input(f"  涨幅要求 (回车推荐3%以上): ").strip()
+    min_change = float(change_input) if change_input else 3
+    
+    # 成交量
+    print(f"  {Color.DIM}(量比>2说明今天比平时成交活跃){Color.RESET}")
+    vol_input = input(f"  成交量放大 (回车推荐2倍以上): ").strip()
+    min_volume_ratio = float(vol_input) if vol_input else 2
+    
+    # 换手率
+    print(f"  {Color.DIM}(换手率>5%说明交易活跃){Color.RESET}")
+    turnover_input = input(f"  交易活跃度 (回车推荐5%以上): ").strip()
+    min_turnover = float(turnover_input) if turnover_input else 5
+    
+    # 涨停
+    include_limit = input(f"  包含涨停股? (y/n，回车默认y): ").strip().lower()
+    include_limit_up = include_limit != "n"
+    
+    return screen_realtime(
+        top_n=30,
+        min_price=1,
+        max_price=max_price,
+        min_change=min_change,
+        min_turnover=min_turnover,
+        min_volume_ratio=min_volume_ratio,
+        include_limit_up=include_limit_up,
+        prefer_small_cap=False
+    )
+
+
+def screen_realtime(top_n=30, min_price=1, max_price=1000, 
+                    min_change=3, min_turnover=1, min_volume_ratio=1.5,
+                    include_limit_up=True, prefer_small_cap=False):
+    """
+    实时扫描潜力股（基于量价信号，不依赖历史K线指标）
+    
+    参数:
+        top_n: 返回前N只
+        min_price: 最低价格
+        max_price: 最高价格
+        min_change: 最小涨跌幅（%）
+        min_turnover: 最小换手率（%）
+        min_volume_ratio: 最小量比
+        include_limit_up: 是否包含涨停股
+        prefer_small_cap: 偏好小市值
+    """
+    print(f"\n{'='*60}")
+    print(f"{Color.CYAN}[正在扫描...]{Color.RESET}")
+    print(f"{'='*60}\n")
+    
+    # 第一步：获取全市场实时数据
+    print(f"  {Color.YELLOW}正在获取实时行情...{Color.RESET}")
+    try:
+        df = fetcher.get_all_stocks()
+        if df.empty:
+            print(f"  {Color.RED}获取数据失败，请检查网络连接{Color.RESET}")
+            return pd.DataFrame()
+        print(f"  获取到 {len(df)} 只股票\n")
+        
+        # 过滤ST、退市、停牌
+        df = df[~df["名称"].str.contains("ST|退", na=False)]
+        df = df[df["最新价"] > 0]
+        
+        # 过滤创业板(300/301)和科创板(688)
+        df = df[~df["代码"].str.startswith(("300", "301", "688"))]
+        print(f"  过滤ST和创业板/科创板后: {len(df)} 只\n")
+    except Exception as e:
+        print(f"  {Color.RED}获取数据失败: {e}{Color.RESET}")
+        return pd.DataFrame()
+    
+    # 第二步：基础条件过滤
+    df_filtered = df.copy()
+    
+    # 价格过滤
+    df_filtered = df_filtered[
+        (df_filtered["最新价"] >= min_price) & 
+        (df_filtered["最新价"] <= max_price)
+    ]
+    
+    # 换手率过滤
+    df_filtered = df_filtered[df_filtered["换手率"] >= min_turnover]
+    
+    # 量比过滤
+    df_filtered = df_filtered[df_filtered["量比"] >= min_volume_ratio]
+    
+    # 涨幅过滤
+    if include_limit_up:
+        df_filtered = df_filtered[df_filtered["涨跌幅"] >= min_change]
+    else:
+        df_filtered = df_filtered[
+            (df_filtered["涨跌幅"] >= min_change) & 
+            (df_filtered["涨跌幅"] < 9.9)  # 排除涨停
+        ]
+    
+    print(f"  基础条件过滤后: {len(df_filtered)} 只")
+    
+    if df_filtered.empty:
+        print(f"\n  {Color.YELLOW}没有找到符合条件的股票{Color.RESET}")
+        return pd.DataFrame()
+    
+    # 第三步：多维度评分
+    results = []
+    for _, row in df_filtered.iterrows():
+        try:
+            score = 0
+            reasons = []
+            
+            change = row["涨跌幅"]
+            turnover = row["换手率"]
+            volume_ratio = row["量比"]
+            amplitude = row["振幅"] if pd.notna(row.get("振幅")) else 0
+            price = row["最新价"]
+            
+            # 涨幅评分
+            if change >= 9.5:
+                score += 3
+                reasons.append("涨停")
+            elif change >= 7:
+                score += 2
+                reasons.append(f"大幅上涨{change:.1f}%")
+            elif change >= 5:
+                score += 1
+                reasons.append(f"上涨{change:.1f}%")
+            else:
+                score += 0.5
+                reasons.append(f"涨幅{change:.1f}%")
+            
+            # 量比评分（放量程度）
+            if volume_ratio >= 5:
+                score += 2
+                reasons.append(f"巨量(量比{volume_ratio:.1f})")
+            elif volume_ratio >= 3:
+                score += 1.5
+                reasons.append(f"放量(量比{volume_ratio:.1f})")
+            elif volume_ratio >= 2:
+                score += 1
+                reasons.append(f"量比{volume_ratio:.1f}")
+            
+            # 换手率评分
+            if turnover >= 10:
+                score += 1.5
+                reasons.append(f"高换手({turnover:.1f}%)")
+            elif turnover >= 5:
+                score += 1
+                reasons.append(f"换手{turnover:.1f}%")
+            
+            # 振幅评分
+            if amplitude >= 8:
+                score += 1
+                reasons.append(f"振幅大({amplitude:.1f}%)")
+            
+            # 低价股加分（炒作空间大）
+            if price <= 10:
+                score += 0.5
+                reasons.append("低价股")
+            
+            # 计算流通市值（亿）
+            mkt_cap = row.get("流通市值", 0)
+            if pd.notna(mkt_cap) and mkt_cap > 0:
+                mkt_cap_yi = mkt_cap / 1e8
+            else:
+                mkt_cap_yi = 0
+            
+            # 小市值加分（弹性大）
+            if 0 < mkt_cap_yi < 50:
+                score += 1
+                reasons.append(f"小市值({mkt_cap_yi:.0f}亿)")
+            elif mkt_cap_yi < 100:
+                score += 0.5
+                reasons.append(f"中市值({mkt_cap_yi:.0f}亿)")
+            
+            results.append({
+                "代码": row["代码"],
+                "名称": row["名称"],
+                "最新价": round(price, 2),
+                "涨跌幅": round(change, 2),
+                "换手率": round(turnover, 2),
+                "量比": round(volume_ratio, 2),
+                "振幅": round(amplitude, 2),
+                "流通市值(亿)": round(mkt_cap_yi, 0),
+                "综合评分": round(score, 1),
+                "入选原因": " | ".join(reasons),
+            })
+        except Exception:
+            continue
+    
+    # 排序并返回
+    result_df = pd.DataFrame(results)
+    if not result_df.empty:
+        result_df = result_df.sort_values("综合评分", ascending=False)
+        result_df = result_df.head(top_n).reset_index(drop=True)
+        result_df.index = result_df.index + 1  # 从1开始编号
+    
+    return result_df
+
+
+if __name__ == "__main__":
+    # 测试实时扫描
+    print("\n" + "="*60)
+    print("测试实时扫描功能")
+    print("="*60 + "\n")
+    
+    result = screen_realtime(
+        top_n=20,
+        min_price=1,
+        max_price=50,
+        min_change=3,
+        min_turnover=1,
+        min_volume_ratio=2,
+        include_limit_up=True
+    )
+    
+    if not result.empty:
+        print("\n筛选结果:")
+        print(result.to_string())
+    else:
+        print("\n未找到符合条件的股票")

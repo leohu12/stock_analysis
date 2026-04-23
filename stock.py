@@ -393,6 +393,7 @@ def show_stock_selection():
     print(f"\n{Color.BOLD}{Color.CYAN}{'═' * 50}{Color.RESET}")
     print(f"{Color.BOLD}{Color.CYAN}  🔍 智能选股{Color.RESET}")
     print(f"{Color.BOLD}{Color.CYAN}{'═' * 50}{Color.RESET}")
+    print(f"  0. [实时快速扫描] 不依赖K线指标，盘中用")
     print(f"  1. MACD金叉选股")
     print(f"  2. KDJ金叉选股")
     print(f"  3. 放量突破选股")
@@ -404,22 +405,37 @@ def show_stock_selection():
     print(f"  9. 返回主菜单")
     print()
 
-    choice = input(f"  {Color.BOLD}请选择 (1-9): {Color.RESET}").strip()
+    choice = input(f"  {Color.BOLD}请选择 (0-9): {Color.RESET}").strip()
 
     try:
+        result = pd.DataFrame()
+        
+        # 实时快速扫描（不需要K线数据）
+        if choice == "0":
+            from screener import screen_realtime_simple
+            result = screen_realtime_simple()
+            
+            # 显示结果
+            if not result.empty:
+                print(f"\n{Color.BOLD}筛选结果 ({len(result)}只):{Color.RESET}")
+                print(result.to_string())
+            return
+        
+        # 以下是需要K线数据的选股方式
         print(f"\n{Color.BOLD}正在获取全市场股票列表...{Color.RESET}")
         all_stocks = fetcher.get_all_stocks()
         if all_stocks.empty:
             print(f"{Color.RED}  获取股票列表失败{Color.RESET}")
             return
 
-        # 过滤ST和停牌
+        # 过滤ST、退市、停牌
         all_stocks = all_stocks[~all_stocks["名称"].str.contains("ST|退", na=False)]
         all_stocks = all_stocks[all_stocks["最新价"] > 0]
         # 过滤创业板（300/301开头）和科创板（688开头）
         all_stocks = all_stocks[~all_stocks["代码"].str.startswith(("300", "301", "688"))]
+        
+        print(f"  过滤后剩余 {len(all_stocks)} 只股票\n")
 
-        result = pd.DataFrame()
         if choice == "1":
             result = screener.screen_macd_golden_cross(all_stocks)
         elif choice == "2":

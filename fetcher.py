@@ -136,53 +136,71 @@ class EastMoneyFetcher:
                 return self._parse_quote_list(data["data"]["diff"])
         return pd.DataFrame()
 
-    def get_all_stocks(self):
-        """获取全部A股列表和实时行情"""
-        url = "https://push2.eastmoney.com/api/qt/clist/get"
-        params = {
-            "pn": 1,
-            "pz": 5000,
-            "po": 1,
-            "np": 1,
-            "fltt": 2,
-            "invt": 2,
-            "fid": "f3",
-            "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048",
-            "fields": "f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f26,f22,f11,f62,f128,f136,f115,f152,f124,f107,f104,f105",
-        }
-        data = self._get(url, params)
-        if data and data.get("data") and data["data"].get("diff"):
-            df = self._parse_stock_list(data["data"]["diff"])
-            return df
+    def get_all_stocks(self, max_stocks=10000):
+        """获取全部A股列表和实时行情（分页获取）"""
+        all_records = []
+        page_size = 1000
+        page = 1
+        
+        while len(all_records) < max_stocks:
+            url = "https://push2.eastmoney.com/api/qt/clist/get"
+            params = {
+                "pn": page,
+                "pz": page_size,
+                "po": 1,
+                "np": 1,
+                "fltt": 2,
+                "invt": 2,
+                "fid": "f3",
+                "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048",
+                "fields": "f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f26,f22,f11,f62,f128,f136,f115,f152,f124,f107,f104,f105",
+            }
+            try:
+                data = self._get(url, params)
+                if not (data and data.get("data") and data["data"].get("diff")):
+                    break
+                records = self._parse_stock_list(data["data"]["diff"])
+                if records.empty:
+                    break
+                all_records.extend(records.to_dict('records'))
+                # 如果返回数量少于page_size，说明已经是最后一页
+                if len(records) < page_size:
+                    break
+                page += 1
+            except Exception:
+                break
+        
+        if all_records:
+            return pd.DataFrame(all_records)
         return pd.DataFrame()
 
     def _parse_stock_list(self, diff_list):
-        """解析股票列表数据"""
+        """解析股票列表数据（push2接口，fltt=2已是标准单位，无需除100）"""
         records = []
         for item in diff_list:
             try:
                 records.append({
                     "代码": item.get("f12", ""),
                     "名称": item.get("f14", ""),
-                    "最新价": self._safe_div(item.get("f2"), 100),
-                    "涨跌幅": self._safe_div(item.get("f3"), 100),
-                    "涨跌额": self._safe_div(item.get("f4"), 100),
+                    "最新价": item.get("f2"),
+                    "涨跌幅": item.get("f3"),
+                    "涨跌额": item.get("f4"),
                     "成交量": item.get("f5", 0),
                     "成交额": item.get("f6", 0),
-                    "振幅": self._safe_div(item.get("f7"), 100),
-                    "换手率": self._safe_div(item.get("f8"), 100),
-                    "市盈率": self._safe_div(item.get("f9"), 100),
-                    "量比": self._safe_div(item.get("f10"), 100),
-                    "最高": self._safe_div(item.get("f15"), 100),
-                    "最低": self._safe_div(item.get("f16"), 100),
-                    "今开": self._safe_div(item.get("f17"), 100),
-                    "昨收": self._safe_div(item.get("f18"), 100),
+                    "振幅": item.get("f7"),
+                    "换手率": item.get("f8"),
+                    "市盈率": item.get("f9"),
+                    "量比": item.get("f10"),
+                    "最高": item.get("f15"),
+                    "最低": item.get("f16"),
+                    "今开": item.get("f17"),
+                    "昨收": item.get("f18"),
                     "总市值": item.get("f20", 0),
                     "流通市值": item.get("f21", 0),
-                    "涨速": self._safe_div(item.get("f22"), 100),
-                    "市净率": self._safe_div(item.get("f23"), 100),
-                    "60日涨幅": self._safe_div(item.get("f152"), 100),
-                    "年初至今涨幅": self._safe_div(item.get("f124"), 100),
+                    "涨速": item.get("f22"),
+                    "市净率": item.get("f23"),
+                    "60日涨幅": item.get("f152"),
+                    "年初至今涨幅": item.get("f124"),
                 })
             except Exception:
                 continue
