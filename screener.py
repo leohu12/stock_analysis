@@ -331,7 +331,7 @@ class StockScreener:
 
     # ==================== 综合选股 ====================
 
-    def multi_signal_screen(self, df, top_n=30, max_scan=500):
+    def multi_signal_screen(self, df, top_n=30, max_scan=2000):
         """多重信号选股：同时出现2个以上买入信号"""
         import signal
         import threading
@@ -443,7 +443,7 @@ class StockScreener:
             result_df = result_df.sort_values("买入信号数", ascending=False)
         return result_df.head(top_n) if not result_df.empty else pd.DataFrame()
 
-    def screen_potential_stocks(self, df, top_n=30, max_scan=500, max_price=None):
+    def screen_potential_stocks(self, df, top_n=30, max_scan=2000, max_price=None):
         """
         潜力股筛选：价格偏低 + 主力资金持续买入
         条件：
