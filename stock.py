@@ -415,10 +415,13 @@ def show_stock_selection():
             from screener import screen_realtime_simple
             result = screen_realtime_simple()
             
-            # 显示结果
+            # 显示结果（简洁格式）
             if not result.empty:
-                print(f"\n{Color.BOLD}筛选结果 ({len(result)}只):{Color.RESET}")
-                print(result.to_string())
+                print(f"\n{Color.BOLD}{Color.CYAN}{'='*55}{Color.RESET}")
+                print(f"{Color.BOLD}{Color.CYAN}  实时选股结果 (共 {len(result)} 只){Color.RESET}")
+                print(f"{Color.BOLD}{Color.CYAN}{'='*55}{Color.RESET}\n")
+                print_table(result, title="", max_rows=30)
+                print(f"\n  {Color.DIM}注：建议买入价仅供参考，非承诺价格{Color.RESET}")
             return
         
         # 以下是需要K线数据的选股方式

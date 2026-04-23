@@ -849,7 +849,6 @@ def screen_realtime(top_n=30, min_price=1, max_price=1000,
     for _, row in df_filtered.iterrows():
         try:
             score = 0
-            reasons = []
             
             change = row["涨跌幅"]
             turnover = row["换手率"]
@@ -860,45 +859,34 @@ def screen_realtime(top_n=30, min_price=1, max_price=1000,
             # 涨幅评分
             if change >= 9.5:
                 score += 3
-                reasons.append("涨停")
             elif change >= 7:
                 score += 2
-                reasons.append(f"大幅上涨{change:.1f}%")
             elif change >= 5:
                 score += 1
-                reasons.append(f"上涨{change:.1f}%")
             else:
                 score += 0.5
-                reasons.append(f"涨幅{change:.1f}%")
             
             # 量比评分（放量程度）
             if volume_ratio >= 5:
                 score += 2
-                reasons.append(f"巨量(量比{volume_ratio:.1f})")
             elif volume_ratio >= 3:
                 score += 1.5
-                reasons.append(f"放量(量比{volume_ratio:.1f})")
             elif volume_ratio >= 2:
                 score += 1
-                reasons.append(f"量比{volume_ratio:.1f}")
             
             # 换手率评分
             if turnover >= 10:
                 score += 1.5
-                reasons.append(f"高换手({turnover:.1f}%)")
             elif turnover >= 5:
                 score += 1
-                reasons.append(f"换手{turnover:.1f}%")
             
             # 振幅评分
             if amplitude >= 8:
                 score += 1
-                reasons.append(f"振幅大({amplitude:.1f}%)")
             
             # 低价股加分（炒作空间大）
             if price <= 10:
                 score += 0.5
-                reasons.append("低价股")
             
             # 计算流通市值（亿）
             mkt_cap = row.get("流通市值", 0)
@@ -910,22 +898,30 @@ def screen_realtime(top_n=30, min_price=1, max_price=1000,
             # 小市值加分（弹性大）
             if 0 < mkt_cap_yi < 50:
                 score += 1
-                reasons.append(f"小市值({mkt_cap_yi:.0f}亿)")
             elif mkt_cap_yi < 100:
                 score += 0.5
-                reasons.append(f"中市值({mkt_cap_yi:.0f}亿)")
+            
+            # 计算建议买入价（基于当前价格回调2-5%）
+            is_limit_up = change >= 9.5
+            if is_limit_up:
+                # 涨停股：建议关注次日机会
+                suggest_buy = "-"
+            else:
+                # 正常股：建议回调2-5%时买入
+                if change >= 5:
+                    # 涨多了，回调风险大，等跌3-5%再买
+                    suggest_buy = round(price * 0.97, 2)
+                else:
+                    # 涨幅适中，可以考虑回调2%买入
+                    suggest_buy = round(price * 0.98, 2)
             
             results.append({
                 "代码": row["代码"],
                 "名称": row["名称"],
-                "最新价": round(price, 2),
-                "涨跌幅": round(change, 2),
-                "换手率": round(turnover, 2),
-                "量比": round(volume_ratio, 2),
-                "振幅": round(amplitude, 2),
-                "流通市值(亿)": round(mkt_cap_yi, 0),
-                "综合评分": round(score, 1),
-                "入选原因": " | ".join(reasons),
+                "评分": round(score, 1),
+                "现价": round(price, 2),
+                "涨幅": f"{change:+.2f}%",
+                "建议买入价": suggest_buy,
             })
         except Exception:
             continue
@@ -933,9 +929,8 @@ def screen_realtime(top_n=30, min_price=1, max_price=1000,
     # 排序并返回
     result_df = pd.DataFrame(results)
     if not result_df.empty:
-        result_df = result_df.sort_values("综合评分", ascending=False)
+        result_df = result_df.sort_values("评分", ascending=False)
         result_df = result_df.head(top_n).reset_index(drop=True)
-        result_df.index = result_df.index + 1  # 从1开始编号
     
     return result_df
 
