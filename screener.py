@@ -903,15 +903,29 @@ def screen_realtime(top_n=30, min_price=1, max_price=1000,
             elif mkt_cap_yi < 100:
                 score += 0.5
             
-            # 计算建议买入价（基于当前价格回调2-5%）
+            # 计算建议买入价和目标价
             is_limit_up = change >= 9.5
             if is_limit_up:
                 suggest_buy = "-"
+                target_price = round(price * 1.1, 2)  # 涨停股：次日涨停价
+                up_space = "+10%"
             else:
+                # 建议买入价：回调2-3%买入
                 if change >= 5:
                     suggest_buy = round(price * 0.97, 2)
                 else:
                     suggest_buy = round(price * 0.98, 2)
+                
+                # 目标价：基于放量程度估算上涨空间
+                if volume_ratio >= 5:
+                    target_pct = 0.15  # 巨量：+15%
+                elif volume_ratio >= 3:
+                    target_pct = 0.10  # 放量：+10%
+                else:
+                    target_pct = 0.05  # 正常量：+5%
+                
+                target_price = round(price * (1 + target_pct), 2)
+                up_space = f"+{int(target_pct * 100)}%"
             
             results.append({
                 "代码": row["代码"],
@@ -920,6 +934,8 @@ def screen_realtime(top_n=30, min_price=1, max_price=1000,
                 "现价": round(price, 2),
                 "涨幅": f"{change:+.2f}%",
                 "建议价": suggest_buy,
+                "目标价": target_price,
+                "空间": up_space,
             })
         except Exception:
             continue
