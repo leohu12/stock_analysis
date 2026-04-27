@@ -117,12 +117,22 @@ def get_margin_trading(stock_code=None):
             ex = _stock_exchange(stock_code)
             if ex == "sh":
                 df = ak.stock_margin_detail_sse(date=end_date)
-                if not df.empty and "股票代码" in df.columns:
-                    df = df[df["股票代码"] == stock_code]
+                if df.empty:
+                    return _error_df(f"暂无 {stock_code} 的融资融券数据（上交所）")
             else:
                 df = ak.stock_margin_detail_szse(date=end_date)
-                if not df.empty and "股票代码" in df.columns:
-                    df = df[df["股票代码"] == stock_code]
+                if df.empty:
+                    return _error_df(f"暂无 {stock_code} 的融资融券数据（深交所）")
+
+            # 找代码列过滤
+            code_col = None
+            for col in df.columns:
+                if "代码" in str(col):
+                    code_col = col
+                    break
+            if code_col:
+                df = df[df[code_col] == stock_code]
+            return df
         else:
             # 全市场汇总（上交所）
             df = ak.stock_margin_sse(start_date=start_date, end_date=end_date)
@@ -133,29 +143,24 @@ def get_margin_trading(stock_code=None):
 
 # ==================== 大宗交易 ====================
 
-def get_block_trade(symbol=None, start_date=None, end_date=None):
+def get_block_trade(trade_date=None):
     """
     获取大宗交易数据（东方财富）
 
     参数:
-        symbol: 股票代码，如 '600519'。不传则返回全部
-        start_date: 开始日期 YYYYMMDD，默认30天前
-        end_date: 结束日期 YYYYMMDD，默认今天
+        trade_date: 日期 YYYYMMDD，默认当天
     """
     ak = _check_akshare()
     if ak is None:
         return _error_df("AKShare未安装: pip install akshare")
 
-    if end_date is None:
-        end_date = datetime.now().strftime("%Y%m%d")
-    if start_date is None:
-        start_date = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
+    if trade_date is None:
+        trade_date = datetime.now().strftime("%Y%m%d")
 
     try:
-        # stock_dzjy_mrmx(symbol, start_date, end_date)
-        # symbol 留空则查全部
-        sym = symbol if symbol else ""
-        df = ak.stock_dzjy_mrmx(symbol=sym, start_date=start_date, end_date=end_date)
+        # stock_dzjy_mrmx 的 symbol 参数默认是 "基金"，
+        # 传空字符串会报错（bug），不传 symbol 参数即可
+        df = ak.stock_dzjy_mrmx(start_date=trade_date, end_date=trade_date)
         return df
     except Exception as e:
         return _error_df(f"大宗交易获取失败: {e}")
@@ -229,16 +234,26 @@ def get_institutional_holdings(stock_code, quarter=None):
 
 # ==================== 机构推荐/评级 ====================
 
-def get_institutional_recommend():
+def get_institutional_recommend(quarter=None):
     """
-    获取机构推荐池（机构投资评级一览）
+    获取机构持股一览表（各股票被机构持仓情况）
+
+    参数:
+        quarter: 季度字符串，如 '20241'（2024年第1季度），默认最近季度
     """
     ak = _check_akshare()
     if ak is None:
         return _error_df("AKShare未安装: pip install akshare")
 
+    if quarter is None:
+        now = datetime.now()
+        quarter = f"{now.year}{(now.month - 1) // 3 + 1}"
+
     try:
-        df = ak.stock_institute_recommend()
+        # stock_institute_hold(symbol="YYYYQ") 返回全市场机构持股一览表
+        df = ak.stock_institute_hold(symbol=quarter)
+        if df is None or (hasattr(df, "empty") and df.empty):
+            return _error_df(f"暂无 {quarter} 季度机构持股数据")
         return df
     except Exception as e:
         return _error_df(f"机构推荐获取失败: {e}")
