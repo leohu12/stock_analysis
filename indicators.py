@@ -218,6 +218,142 @@ def calc_supertrend(df, period=10, multiplier=3):
     return df
 
 
+def calc_adx_dmi(df, n=14):
+    """
+    计算ADX/DMI指标 (趋向指标)
+    +DI = SMA(+DM, N) / SMA(TR, N) * 100
+    -DI = SMA(-DM, N) / SMA(TR, N) * 100
+    DX = ABS(+DI - -DI) / (+DI + -DI) * 100
+    ADX = SMA(DX, N)
+    """
+    high = df["最高"]
+    low = df["最低"]
+    close = df["收盘"]
+
+    plus_dm = high.diff()
+    minus_dm = -low.diff()
+    plus_dm[plus_dm < 0] = 0
+    minus_dm[minus_dm < 0] = 0
+    plus_dm[plus_dm <= minus_dm] = 0
+    minus_dm[minus_dm <= plus_dm] = 0
+
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    atr = tr.rolling(window=n).mean()
+    plus_di = 100 * plus_dm.rolling(window=n).mean() / atr
+    minus_di = 100 * minus_dm.rolling(window=n).mean() / atr
+    dx = (abs(plus_di - minus_di) / (plus_di + minus_di) * 100).fillna(0)
+    adx = dx.rolling(window=n).mean()
+
+    df["+DI"] = plus_di.round(2)
+    df["-DI"] = minus_di.round(2)
+    df["ADX"] = adx.round(2)
+    return df
+
+
+def calc_sar(df, af=0.02, max_af=0.2):
+    """
+    计算SAR抛物线转向指标
+    af: 加速因子, max_af: 最大加速因子
+    """
+    high = df["最高"].values
+    low = df["最低"].values
+    close = df["收盘"].values
+    n = len(df)
+
+    sar = [0.0] * n
+    ep = [0.0] * n
+    af_list = [af] * n
+    trend = [True] * n  # True = 上升
+
+    # 初始化
+    sar[0] = low[0]
+    ep[0] = high[0]
+
+    for i in range(1, n):
+        sar[i] = sar[i - 1] + af_list[i - 1] * (ep[i - 1] - sar[i - 1])
+        trend[i] = trend[i - 1]
+        ep[i] = ep[i - 1]
+        af_list[i] = af_list[i - 1]
+
+        if trend[i]:  # 上升趋势
+            if low[i] < sar[i]:
+                trend[i] = False
+                sar[i] = ep[i - 1]
+                ep[i] = low[i]
+                af_list[i] = af
+            else:
+                if high[i] > ep[i - 1]:
+                    ep[i] = high[i]
+                    af_list[i] = min(af_list[i - 1] + af, max_af)
+                sar[i] = min(sar[i], low[i - 1])
+                if i >= 2:
+                    sar[i] = min(sar[i], low[i - 2])
+        else:  # 下降趋势
+            if high[i] > sar[i]:
+                trend[i] = True
+                sar[i] = ep[i - 1]
+                ep[i] = high[i]
+                af_list[i] = af
+            else:
+                if low[i] < ep[i - 1]:
+                    ep[i] = low[i]
+                    af_list[i] = min(af_list[i - 1] + af, max_af)
+                sar[i] = max(sar[i], high[i - 1])
+                if i >= 2:
+                    sar[i] = max(sar[i], high[i - 2])
+
+    df["SAR"] = np.round(sar, 2)
+    df["SAR_Trend"] = trend  # True = 多头, False = 空头
+    return df
+
+
+def calc_psy(df, n=12):
+    """
+    计算PSY心理线指标
+    PSY = 上涨天数 / N * 100
+    """
+    up_days = (df["收盘"].diff() > 0).rolling(window=n).sum()
+    df["PSY"] = (up_days / n * 100).round(2)
+    return df
+
+
+def calc_mfi(df, n=14):
+    """
+    计算MFI资金流量指标 (Money Flow Index)
+    类似RSI但考虑成交量
+    """
+    tp = (df["最高"] + df["最低"] + df["收盘"]) / 3
+    raw_money_flow = tp * df["成交量"]
+    money_flow_sign = np.where(tp > tp.shift(1), 1, -1)
+    signed_money_flow = raw_money_flow * money_flow_sign
+
+    positive_flow = pd.Series(signed_money_flow).rolling(window=n).apply(
+        lambda x: x[x > 0].sum(), raw=True
+    )
+    negative_flow = pd.Series(signed_money_flow).rolling(window=n).apply(
+        lambda x: abs(x[x < 0].sum()), raw=True
+    )
+
+    mfi = 100 - (100 / (1 + positive_flow / negative_flow))
+    df["MFI"] = mfi.round(2)
+    return df
+
+
+def calc_vwap(df):
+    """
+    计算VWAP成交量加权平均价 (累积)
+    VWAP = cumsum(TP * Volume) / cumsum(Volume)
+    """
+    tp = (df["最高"] + df["最低"] + df["收盘"]) / 3
+    vwap = (tp * df["成交量"]).cumsum() / df["成交量"].cumsum()
+    df["VWAP"] = vwap.round(2)
+    return df
+
+
 def calc_all_indicators(df):
     """计算所有技术指标"""
     df = calc_ma(df)
@@ -231,6 +367,11 @@ def calc_all_indicators(df):
     df = calc_obv(df)
     df = calc_atr(df)
     df = calc_supertrend(df)
+    df = calc_adx_dmi(df)
+    df = calc_sar(df)
+    df = calc_psy(df)
+    df = calc_mfi(df)
+    df = calc_vwap(df)
     return df
 
 
@@ -306,6 +447,48 @@ def analyze_signals(df):
                     row_signals.append("🟢 SuperTrend转多")
                 else:
                     row_signals.append("🔴 SuperTrend转空")
+
+        # ADX/DMI信号
+        if pd.notna(row.get("ADX")) and pd.notna(row.get("+DI")) and pd.notna(row.get("-DI")):
+            if i >= 1:
+                prev = df.iloc[i - 1]
+                if prev["+DI"] <= prev["-DI"] and row["+DI"] > row["-DI"] and row["ADX"] > 20:
+                    row_signals.append("🟢 DMI金叉(趋势增强)")
+                elif prev["+DI"] >= prev["-DI"] and row["+DI"] < row["-DI"] and row["ADX"] > 20:
+                    row_signals.append("🔴 DMI死叉(趋势转弱)")
+            if row["ADX"] > 40:
+                row_signals.append("📈 趋势极强")
+            elif row["ADX"] < 15:
+                row_signals.append("📉 趋势极弱(震荡)")
+
+        # SAR信号
+        if pd.notna(row.get("SAR_Trend")) and i >= 1:
+            prev = df.iloc[i - 1]
+            if not prev["SAR_Trend"] and row["SAR_Trend"]:
+                row_signals.append("🟢 SAR转多")
+            elif prev["SAR_Trend"] and not row["SAR_Trend"]:
+                row_signals.append("🔴 SAR转空")
+
+        # PSY信号
+        if pd.notna(row.get("PSY")):
+            if row["PSY"] < 25:
+                row_signals.append("🟢 PSY超卖(情绪极度悲观)")
+            elif row["PSY"] > 75:
+                row_signals.append("🔴 PSY超买(情绪极度乐观)")
+
+        # MFI信号
+        if pd.notna(row.get("MFI")):
+            if row["MFI"] < 20:
+                row_signals.append("🟢 MFI超卖(资金流出过度)")
+            elif row["MFI"] > 80:
+                row_signals.append("🔴 MFI超买(资金流入过度)")
+
+        # VWAP信号
+        if pd.notna(row.get("VWAP")):
+            if row["收盘"] > row["VWAP"] and i >= 1 and df.iloc[i - 1]["收盘"] <= df.iloc[i - 1]["VWAP"]:
+                row_signals.append("🟢 突破VWAP(机构成本上方)")
+            elif row["收盘"] < row["VWAP"] and i >= 1 and df.iloc[i - 1]["收盘"] >= df.iloc[i - 1]["VWAP"]:
+                row_signals.append("🔴 跌破VWAP(机构成本下方)")
 
         # 均线信号
         if pd.notna(row.get("MA5")) and pd.notna(row.get("MA20")):

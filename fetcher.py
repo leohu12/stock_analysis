@@ -144,7 +144,7 @@ class EastMoneyFetcher:
     def get_all_stocks(self, max_stocks=10000):
         """获取全部A股列表和实时行情（分页获取）"""
         all_records = []
-        page_size = 1000
+        page_size = 500
         page = 1
         
         while len(all_records) < max_stocks:
@@ -164,14 +164,18 @@ class EastMoneyFetcher:
                 data = self._get(url, params)
                 if not (data and data.get("data") and data["data"].get("diff")):
                     break
-                records = self._parse_stock_list(data["data"]["diff"])
+                diff = data["data"]["diff"]
+                records = self._parse_stock_list(diff)
                 if records.empty:
                     break
                 all_records.extend(records.to_dict('records'))
-                # 如果返回数量少于page_size，说明已经是最后一页
-                if len(records) < page_size:
+                # 如果实际返回数量少于请求的page_size，说明是最后一页
+                actual_count = len(diff)
+                if actual_count < page_size:
                     break
                 page += 1
+                if page > 60:  # 安全限制：最多60页
+                    break
             except Exception:
                 break
         
@@ -699,5 +703,145 @@ class EastMoneyFetcher:
             return None
 
 
-# 全局实例
+# ==================== 新浪免费实时行情（含五档盘口）====================
+
+class SinaFetcher:
+    """
+    新浪财经免费实时行情获取器
+    参考 easyquotation (https://github.com/shidenggui/easyquotation)
+    特点：
+    - 1秒级推送，速度快
+    - 包含五档买卖盘（买一~买五、卖一~卖五）
+    - 适合盘中快速刷新
+    """
+
+    BASE_URL = "http://hq.sinajs.cn/?rn={}&list={}"
+    HEADERS = {
+        "Referer": "https://finance.sina.com.cn/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    }
+
+    # A股字段映射（按逗号分割后的索引）
+    # 返回格式: var hq_str_sh600000="名称,开盘,昨收,现价,最高,最低,竞买价,竞卖价,成交量,成交额,买1量,买1价,买2量,买2价,买3量,买3价,买4量,买4价,买5量,买5价,卖1量,卖1价,卖2量,卖2价,卖3量,卖3价,卖4量,卖4价,卖5量,卖5价,日期,时间";
+    FIELDS = [
+        "名称", "开盘价", "昨收", "最新价", "最高", "最低",
+        "买一价", "卖一价", "成交量", "成交额",
+        "买1量", "买1价", "买2量", "买2价", "买3量", "买3价",
+        "买4量", "买4价", "买5量", "买5价",
+        "卖1量", "卖1价", "卖2量", "卖2价", "卖3量", "卖3价",
+        "卖4量", "卖4价", "卖5量", "卖5价",
+        "日期", "时间",
+    ]
+
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.trust_env = False
+        self.session.proxies = {"http": None, "https": None}
+        self.session.headers.update(self.HEADERS)
+
+    @staticmethod
+    def _to_sina_code(code):
+        """转为新浪代码格式: sh600000 / sz000001"""
+        code = str(code).strip()
+        if code.startswith(("6", "9", "5")):
+            return f"sh{code}"
+        return f"sz{code}"
+
+    def get_realtime_quote(self, stock_codes):
+        """
+        获取新浪实时行情（含五档）
+        stock_codes: 股票代码列表或单个字符串，如 ['600519', '000001']
+        返回: DataFrame
+        """
+        if isinstance(stock_codes, str):
+            stock_codes = [stock_codes]
+
+        sina_codes = [self._to_sina_code(c) for c in stock_codes]
+        # 新浪接口单次建议不超过 800 只
+        chunks = [sina_codes[i:i + 800] for i in range(0, len(sina_codes), 800)]
+
+        all_records = []
+        for chunk in chunks:
+            url = self.BASE_URL.format(random.randint(10_000_000, 99_999_999), ",".join(chunk))
+            try:
+                resp = self.session.get(url, timeout=15, verify=False)
+                resp.encoding = "gbk"
+                records = self._parse_response(resp.text)
+                all_records.extend(records)
+            except Exception:
+                continue
+
+        return pd.DataFrame(all_records)
+
+    def _parse_response(self, text):
+        """解析新浪返回的 JS 变量文本"""
+        records = []
+        for line in text.strip().split(";"):
+            line = line.strip()
+            if not line:
+                continue
+            # 提取等号后双引号内的内容
+            if "=" not in line:
+                continue
+            parts = line.split("=", 1)
+            left = parts[0].strip()
+            right = parts[1].strip().strip('"')
+            if not right:
+                continue
+
+            # 提取代码
+            code_match = left.split("_")[-1] if "_" in left else ""
+            code = code_match.replace("sh", "").replace("sz", "") if code_match else ""
+
+            # 分割字段
+            vals = right.split(",")
+            if len(vals) < 33:
+                continue
+
+            record = {"代码": code}
+            for i, field in enumerate(self.FIELDS):
+                if i < len(vals):
+                    val = vals[i].strip()
+                    if field in ("名称", "日期", "时间"):
+                        record[field] = val
+                    else:
+                        try:
+                            record[field] = float(val) if val else 0.0
+                        except (ValueError, TypeError):
+                            record[field] = 0.0
+                else:
+                    record[field] = None
+            records.append(record)
+        return records
+
+    def get_depth5(self, stock_code):
+        """
+        获取五档盘口（买一~买五、卖一~卖五）
+        返回: dict
+        """
+        df = self.get_realtime_quote([stock_code])
+        if df.empty:
+            return {}
+        row = df.iloc[0]
+        depth = {
+            "代码": row.get("代码", ""),
+            "名称": row.get("名称", ""),
+            "最新价": row.get("最新价", 0),
+            "买一价": row.get("买一价", 0),
+            "卖一价": row.get("卖一价", 0),
+            "买盘": [],
+            "卖盘": [],
+        }
+        for i in range(1, 6):
+            b_qty = row.get(f"买{i}量", 0)
+            b_prc = row.get(f"买{i}价", 0)
+            s_qty = row.get(f"卖{i}量", 0)
+            s_prc = row.get(f"卖{i}价", 0)
+            depth["买盘"].append({"档": i, "价": b_prc, "量": int(b_qty / 100) if b_qty else 0})  # 转为手
+            depth["卖盘"].append({"档": i, "价": s_prc, "量": int(s_qty / 100) if s_qty else 0})
+        return depth
+
+
+# ==================== 全局实例 ====================
 fetcher = EastMoneyFetcher()
+sina_fetcher = SinaFetcher()

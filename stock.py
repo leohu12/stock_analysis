@@ -35,7 +35,7 @@ _script_dir = os.path.dirname(os.path.abspath(__file__))
 if _script_dir not in sys.path:
     sys.path.insert(0, _script_dir)
 
-from fetcher import fetcher
+from fetcher import fetcher, sina_fetcher
 from indicators import calc_all_indicators, analyze_signals, generate_analysis_summary
 from patterns import identify_patterns
 from screener import screener
@@ -45,6 +45,9 @@ from display import (
     print_money_flow_chart, print_market_overview, print_stock_detail,
     print_progress, print_horizontal_bar, Color
 )
+from backtest import run_backtest, print_backtest_report, list_strategies
+from chart import plot_kline_simple
+import akshare_data as akdata
 
 
 # ==================== 功能函数 ====================
@@ -277,6 +280,12 @@ def analyze_stock(stock_code, days=120):
         except Exception:
             print(f"\n  {Color.DIM}资金流向数据暂不可用{Color.RESET}")
 
+        # ===== 5. 盘口数据（五档） =====
+        print(f"\n{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
+        print(f"{Color.BOLD}  📊 盘口挂单（谁在买、谁在卖）{Color.RESET}")
+        print(f"{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
+        _show_depth_inline(stock_code)
+
     except Exception as e:
         print(f"{Color.RED}  分析失败: {e}{Color.RESET}")
 
@@ -401,6 +410,70 @@ def _calc_price_levels(latest):
         sell_price = round(price * 1.05, 2)
 
     return round(support, 2), round(resistance, 2), buy_price, sell_price
+
+
+def _show_depth_inline(stock_code):
+    """在个股分析中内联展示盘口（新浪五档）"""
+    try:
+        depth = sina_fetcher.get_depth5(stock_code)
+        if depth and depth.get("买盘"):
+            _print_depth(depth)
+            return
+    except Exception:
+        pass
+
+    print(f"  {Color.DIM}盘口数据暂不可用{Color.RESET}")
+
+
+def _print_depth(depth):
+    """打印五档盘口表格"""
+    name = depth.get("名称", "")
+    price = depth.get("最新价", 0)
+    print(f"\n  {Color.BOLD}{name}  现价 {price:.2f}{Color.RESET}")
+
+    sells = depth.get("卖盘", [])[::-1]  # 卖盘倒序显示（卖5在上）
+    buys = depth.get("买盘", [])
+
+    print(f"\n  {Color.DIM}{'档位':>4}  {'卖价':>8}  {'卖量':>8}  │  {'买价':>8}  {'买量':>8}{Color.RESET}")
+    print(f"  {Color.DIM}{'─'*52}{Color.RESET}")
+
+    for i in range(5, 0, -1):
+        s = next((x for x in sells if x["档"] == i), None)
+        b = next((x for x in buys if x["档"] == i), None)
+
+        s_price = s["价"] if s else 0
+        s_vol = s["量"] if s else 0
+        b_price = b["价"] if b else 0
+        b_vol = b["量"] if b else 0
+
+        s_color = Color.GREEN if s_price > 0 else Color.DIM
+        b_color = Color.RED if b_price > 0 else Color.DIM
+
+        print(f"  {'卖' + str(i):>4}  {s_color}{s_price:>8.2f}{Color.RESET}  {s_vol:>8,}  │  "
+              f"{b_color}{b_price:>8.2f}{Color.RESET}  {b_vol:>8,}")
+
+    # 计算买卖力量对比
+    buy_total = sum(b["价"] * b["量"] for b in buys if b["价"] > 0)
+    sell_total = sum(s["价"] * s["量"] for s in sells if s["价"] > 0)
+    total = buy_total + sell_total
+    if total > 0:
+        buy_ratio = buy_total / total * 100
+        print(f"\n  {Color.DIM}买盘金额占比: {Color.RED}{buy_ratio:.1f}%{Color.DIM}  "
+              f"卖盘金额占比: {Color.GREEN}{100-buy_ratio:.1f}%{Color.RESET}")
+        if buy_ratio > 60:
+            print(f"  {Color.RED}→ 买盘力量占优，下方承接较强{Color.RESET}")
+        elif buy_ratio < 40:
+            print(f"  {Color.GREEN}→ 卖盘力量占优，上方抛压较大{Color.RESET}")
+        else:
+            print(f"  {Color.YELLOW}→ 买卖力量均衡{Color.RESET}")
+
+
+def show_depth(stock_code):
+    """单独查看某只股票的五档盘口"""
+    print(f"\n{Color.BOLD}{Color.CYAN}{'═' * 50}{Color.RESET}")
+    print(f"{Color.BOLD}{Color.CYAN}  📊 {stock_code} 盘口分析{Color.RESET}")
+    print(f"{Color.BOLD}{Color.CYAN}{'═' * 50}{Color.RESET}")
+    _show_depth_inline(stock_code)
 
 
 def search_stock(keyword):
@@ -663,6 +736,182 @@ def show_quick_screen():
         print(f"{Color.RED}  筛选失败: {e}{Color.RESET}")
 
 
+# ==================== 回测功能 ====================
+
+def show_backtest_menu():
+    """策略回测菜单"""
+    print(f"\n{Color.BOLD}{Color.CYAN}{'═'*50}{Color.RESET}")
+    print(f"{Color.BOLD}{Color.CYAN}  📊 策略回测{Color.RESET}")
+    print(f"{Color.BOLD}{Color.CYAN}{'═'*50}{Color.RESET}")
+
+    strategies = list_strategies()
+    for i, (key, desc) in enumerate(strategies, 1):
+        print(f"  {i}. {desc}")
+    print(f"  0. 返回主菜单")
+    print()
+
+    choice = input(f"  {Color.BOLD}请选择策略 (0-{len(strategies)}): {Color.RESET}").strip()
+    if choice == "0":
+        return
+
+    try:
+        idx = int(choice) - 1
+        if idx < 0 or idx >= len(strategies):
+            print(f"{Color.YELLOW}  无效选择{Color.RESET}")
+            return
+        strategy_key, strategy_desc = strategies[idx]
+    except ValueError:
+        print(f"{Color.YELLOW}  输入无效{Color.RESET}")
+        return
+
+    code = input(f"  {Color.BOLD}请输入股票代码 (如 600519): {Color.RESET}").strip()
+    if not code:
+        return
+
+    days_input = input(f"  {Color.BOLD}回测周期天数 (默认500): {Color.RESET}").strip()
+    days = int(days_input) if days_input.isdigit() else 500
+
+    capital_input = input(f"  {Color.BOLD}初始资金 (默认100000): {Color.RESET}").strip()
+    capital = float(capital_input) if capital_input else 100000
+
+    print(f"\n  {Color.DIM}正在获取 {code} 的历史数据...{Color.RESET}")
+    try:
+        kline = fetcher.get_kline(code, count=days)
+        if kline.empty:
+            print(f"{Color.RED}  未找到该股票数据{Color.RESET}")
+            return
+
+        print(f"  {Color.DIM}正在运行回测: {strategy_desc}...{Color.RESET}")
+        result = run_backtest(code, kline, strategy_name=strategy_key,
+                              initial_capital=capital, position_pct=1.0, stop_loss_pct=0.05)
+        print_backtest_report(result)
+    except Exception as e:
+        print(f"{Color.RED}  回测失败: {e}{Color.RESET}")
+
+
+def show_chart_export():
+    """K线图导出"""
+    print(f"\n{Color.BOLD}{Color.CYAN}{'═'*50}{Color.RESET}")
+    print(f"{Color.BOLD}{Color.CYAN}  📈 K线图导出{Color.RESET}")
+    print(f"{Color.BOLD}{Color.CYAN}{'═'*50}{Color.RESET}")
+
+    code = input(f"  {Color.BOLD}请输入股票代码 (如 600519): {Color.RESET}").strip()
+    if not code:
+        return
+
+    print(f"  {Color.DIM}正在获取K线数据...{Color.RESET}")
+    try:
+        kline = fetcher.get_kline(code, count=120)
+        if kline.empty:
+            print(f"{Color.RED}  未找到数据{Color.RESET}")
+            return
+
+        # 尝试获取名称
+        name = code
+        try:
+            rt = fetcher.get_realtime_quote(code)
+            if not rt.empty:
+                name = rt.iloc[0].get("名称", code)
+        except Exception:
+            pass
+
+        save_dir = input(f"  {Color.BOLD}保存目录 (默认当前目录，直接回车): {Color.RESET}").strip() or "."
+
+        print(f"  {Color.DIM}正在生成K线图...{Color.RESET}")
+        path = plot_kline_simple(kline, stock_code=code, save_dir=save_dir)
+        if path:
+            print(f"\n  {Color.GREEN}✅ K线图已保存: {path}{Color.RESET}")
+        else:
+            print(f"\n  {Color.YELLOW}⚠️ 图表生成失败，请检查是否安装了 mplfinance:{Color.RESET}")
+            print(f"  {Color.DIM}   pip install mplfinance matplotlib{Color.RESET}")
+    except Exception as e:
+        print(f"{Color.RED}  导出失败: {e}{Color.RESET}")
+
+
+def show_akshare_data():
+    """AKShare 补充数据菜单"""
+    print(f"\n{Color.BOLD}{Color.CYAN}{'═'*50}{Color.RESET}")
+    print(f"{Color.BOLD}{Color.CYAN}  🔍 AKShare 补充数据{Color.RESET}")
+    print(f"{Color.BOLD}{Color.CYAN}{'═'*50}{Color.RESET}")
+    print(f"  1. 龙虎榜数据")
+    print(f"  2. 融资融券汇总")
+    print(f"  3. 个股融资融券")
+    print(f"  4. 大宗交易")
+    print(f"  5. 新股数据")
+    print(f"  6. 股东增减持")
+    print(f"  7. 机构持仓")
+    print(f"  0. 返回主菜单")
+    print()
+
+    choice = input(f"  {Color.BOLD}请选择 (0-7): {Color.RESET}").strip()
+
+    try:
+        if choice == "1":
+            print(f"\n  {Color.DIM}正在获取龙虎榜数据...{Color.RESET}")
+            df = akdata.get_dragon_tiger_list()
+            if not df.empty:
+                print_table(df.head(20), title="龙虎榜数据", max_rows=20)
+            else:
+                msg = getattr(df, "_error_msg", "暂无数据")
+                print(f"  {Color.YELLOW}{msg}{Color.RESET}")
+        elif choice == "2":
+            print(f"\n  {Color.DIM}正在获取融资融券汇总...{Color.RESET}")
+            df = akdata.get_margin_trading()
+            if not df.empty:
+                print_table(df.head(15), title="融资融券汇总", max_rows=15)
+            else:
+                msg = getattr(df, "_error_msg", "暂无数据")
+                print(f"  {Color.YELLOW}{msg}{Color.RESET}")
+        elif choice == "3":
+            code = input(f"  {Color.BOLD}请输入股票代码: {Color.RESET}").strip()
+            if code:
+                print(f"\n  {Color.DIM}正在获取 {code} 融资融券数据...{Color.RESET}")
+                df = akdata.get_margin_trading(stock_code=code)
+                if not df.empty:
+                    print_table(df.tail(10), title=f"{code} 融资融券", max_rows=10)
+                else:
+                    msg = getattr(df, "_error_msg", "暂无数据")
+                    print(f"  {Color.YELLOW}{msg}{Color.RESET}")
+        elif choice == "4":
+            print(f"\n  {Color.DIM}正在获取大宗交易...{Color.RESET}")
+            df = akdata.get_block_trade()
+            if not df.empty:
+                print_table(df.head(15), title="大宗交易", max_rows=15)
+            else:
+                msg = getattr(df, "_error_msg", "暂无数据")
+                print(f"  {Color.YELLOW}{msg}{Color.RESET}")
+        elif choice == "5":
+            print(f"\n  {Color.DIM}正在获取新股数据...{Color.RESET}")
+            df = akdata.get_new_stock_list()
+            if not df.empty:
+                print_table(df.head(15), title="新股数据", max_rows=15)
+            else:
+                msg = getattr(df, "_error_msg", "暂无数据")
+                print(f"  {Color.YELLOW}{msg}{Color.RESET}")
+        elif choice == "6":
+            code = input(f"  {Color.BOLD}请输入股票代码: {Color.RESET}").strip()
+            if code:
+                print(f"\n  {Color.DIM}正在获取 {code} 股东增减持...{Color.RESET}")
+                df = akdata.get_holder_change(code)
+                if not df.empty:
+                    print_table(df.head(10), title=f"{code} 股东增减持", max_rows=10)
+                else:
+                    msg = getattr(df, "_error_msg", "暂无数据")
+                    print(f"  {Color.YELLOW}{msg}{Color.RESET}")
+        elif choice == "7":
+            code = input(f"  {Color.BOLD}请输入股票代码: {Color.RESET}").strip()
+            if code:
+                print(f"\n  {Color.DIM}正在获取 {code} 机构持仓...{Color.RESET}")
+                df = akdata.get_institutional_holdings(code)
+                if not df.empty:
+                    print_table(df.head(10), title=f"{code} 机构持仓", max_rows=10)
+                else:
+                    msg = getattr(df, "_error_msg", "暂无数据")
+                    print(f"  {Color.YELLOW}{msg}{Color.RESET}")
+    except Exception as e:
+        print(f"{Color.RED}  获取失败: {e}{Color.RESET}")
+
+
 # ==================== 主菜单 ====================
 
 def print_banner():
@@ -693,6 +942,10 @@ def print_menu():
   │  5. ⚡ 快速筛选             │
   │  6. 🏭 板块分析             │
   │  7. 🔎 搜索股票             │
+  │  8. 📊 盘口分析(五档)       │
+  │  9. 📊 策略回测             │
+  │  10. 📈 K线图导出           │
+  │  11. 🔍 AKShare补充数据     │
   │  0. 退出                   │
   └─────────────────────────────┘{Color.RESET}
 """)
@@ -811,6 +1064,38 @@ def main():
             search_stock(sys.argv[2])
         elif arg.lower() == "market":
             show_market_overview()
+        elif arg.lower() == "depth" and len(sys.argv) > 2:
+            show_depth(sys.argv[2])
+        elif arg.lower() == "chart" and len(sys.argv) > 2:
+            # 命令行导出K线图
+            code = sys.argv[2]
+            save_dir = sys.argv[3] if len(sys.argv) > 3 else "."
+            try:
+                kline = fetcher.get_kline(code, count=120)
+                if not kline.empty:
+                    path = plot_kline_simple(kline, stock_code=code, save_dir=save_dir)
+                    if path:
+                        print(f"K线图已保存: {path}")
+                    else:
+                        print("图表生成失败，请安装: pip install mplfinance")
+                else:
+                    print("未找到数据")
+            except Exception as e:
+                print(f"导出失败: {e}")
+        elif arg.lower() == "backtest" and len(sys.argv) > 3:
+            # 命令行回测: python stock.py backtest 600519 macd_cross
+            code = sys.argv[2]
+            strategy = sys.argv[3]
+            days = int(sys.argv[4]) if len(sys.argv) > 4 else 500
+            try:
+                kline = fetcher.get_kline(code, count=days)
+                if not kline.empty:
+                    result = run_backtest(code, kline, strategy_name=strategy)
+                    print_backtest_report(result)
+                else:
+                    print("未找到数据")
+            except Exception as e:
+                print(f"回测失败: {e}")
         elif "," in arg:
             # 多股票同屏分析
             codes = [c.strip() for c in arg.split(",") if c.strip()]
@@ -822,7 +1107,7 @@ def main():
     # 交互式菜单
     while True:
         print_menu()
-        choice = input(f"  {Color.BOLD}请选择功能 (0-7): {Color.RESET}").strip()
+        choice = input(f"  {Color.BOLD}请选择功能 (0-11): {Color.RESET}").strip()
 
         if choice == "0":
             print(f"\n{Color.CYAN}  再见！祝投资顺利！👋{Color.RESET}\n")
@@ -853,6 +1138,16 @@ def main():
             keyword = input(f"\n  {Color.BOLD}请输入搜索关键词 (代码或名称): {Color.RESET}").strip()
             if keyword:
                 search_stock(keyword)
+        elif choice == "8":
+            code = input(f"\n  {Color.BOLD}请输入股票代码查看盘口 (如 600519): {Color.RESET}").strip()
+            if code:
+                show_depth(code)
+        elif choice == "9":
+            show_backtest_menu()
+        elif choice == "10":
+            show_chart_export()
+        elif choice == "11":
+            show_akshare_data()
         else:
             print(f"{Color.YELLOW}  无效选择，请重新输入{Color.RESET}")
 

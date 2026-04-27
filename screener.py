@@ -810,6 +810,12 @@ def screen_realtime(top_n=30, min_price=1, max_price=1000,
         df = df[~df["名称"].str.contains("ST|退", na=False)]
         df = df[df["最新价"] > 0]
         
+        # 确保数值列为数字类型（防止字符串比较报错）
+        numeric_cols = ["最新价", "涨跌幅", "换手率", "量比", "振幅", "成交额"]
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
         # 过滤创业板(300/301)和科创板(688)
         df = df[~df["代码"].str.startswith(("300", "301", "688"))]
     except Exception as e:
