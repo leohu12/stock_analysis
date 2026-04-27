@@ -840,10 +840,11 @@ def show_akshare_data():
     print(f"  5. 新股数据")
     print(f"  6. 股东增减持")
     print(f"  7. 机构持仓")
+    print(f"  8. 机构推荐")
     print(f"  0. 返回主菜单")
     print()
 
-    choice = input(f"  {Color.BOLD}请选择 (0-7): {Color.RESET}").strip()
+    choice = input(f"  {Color.BOLD}请选择 (0-8): {Color.RESET}").strip()
 
     try:
         if choice == "1":
@@ -908,6 +909,14 @@ def show_akshare_data():
                 else:
                     msg = getattr(df, "_error_msg", "暂无数据")
                     print(f"  {Color.YELLOW}{msg}{Color.RESET}")
+        elif choice == "8":
+            print(f"\n  {Color.DIM}正在获取机构推荐池...{Color.RESET}")
+            df = akdata.get_institutional_recommend()
+            if not df.empty:
+                print_table(df.head(15), title="机构推荐/评级", max_rows=15)
+            else:
+                msg = getattr(df, "_error_msg", "暂无数据")
+                print(f"  {Color.YELLOW}{msg}{Color.RESET}")
     except Exception as e:
         print(f"{Color.RED}  获取失败: {e}{Color.RESET}")
 
