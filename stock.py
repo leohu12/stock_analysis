@@ -101,7 +101,23 @@ def analyze_stock(stock_code, days=120):
 
     try:
         # 先获取实时行情（获取股票名称和实时数据）
-        realtime = fetcher.get_realtime_quote(stock_code)
+        # 东方接口优先，失败则切换新浪备用
+        try:
+            realtime = fetcher.get_realtime_quote(stock_code)
+        except Exception as e:
+            realtime = pd.DataFrame()
+        
+        # 东方接口失败或返回空，自动切换新浪备用
+        sina_used = False
+        if realtime.empty:
+            try:
+                realtime = sina_fetcher.get_realtime_quote(stock_code)
+                if not realtime.empty:
+                    print(f"  {Color.YELLOW}(已切换新浪备用接口获取行情){Color.RESET}")
+                    sina_used = True
+            except Exception:
+                pass
+        
         if realtime.empty:
             print(f"{Color.RED}  未找到该股票数据，请检查代码是否正确{Color.RESET}")
             return
@@ -114,6 +130,19 @@ def analyze_stock(stock_code, days=120):
         if kline.empty:
             print(f"{Color.RED}  未找到该股票数据，请检查代码是否正确{Color.RESET}")
             return
+        
+        # 新浪接口补充计算缺失字段（涨跌幅、涨跌额、今开）
+        if sina_used:
+            prev_close = rt.get('昨收', 0)
+            current_price = rt.get('最新价', 0)
+            if prev_close and prev_close > 0:
+                rt['涨跌幅'] = round((current_price - prev_close) / prev_close * 100, 2)
+                rt['涨跌额'] = round(current_price - prev_close, 3)
+            # 新浪接口今开字段缺失，从K线获取
+            if len(kline) > 0:
+                rt['今开'] = kline.iloc[-1].get('开盘', 0)
+                # 新浪换手率也缺失，尝试从K线获取
+                rt['换手率'] = kline.iloc[-1].get('换手率', 0)
 
         # 计算所有指标（后台计算，不展示）
         kline = calc_all_indicators(kline)
