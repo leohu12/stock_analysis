@@ -44,6 +44,9 @@ from display import (
     print_money_flow_chart, print_market_overview, print_stock_detail,
     print_progress, print_horizontal_bar, Color
 )
+from neodata_client import (get_stock_news, get_stock_events, get_capital_flow,
+                            format_news_for_display, format_events_for_display,
+                            format_capital_flow_for_display)
 import akshare_data as akdata
 
 # ==================== 功能函数 ====================
@@ -272,6 +275,29 @@ def analyze_stock(stock_code, days=120):
         print(f"{Color.BOLD}  📊 盘口挂单（谁在买、谁在卖）{Color.RESET}")
         print(f"{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
         _show_depth_inline(stock_code)
+
+        # ===== 财经要闻 =====
+        print(f"\n{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
+        print(f"{Color.BOLD}  📰 财经要闻{Color.RESET}")
+        print(f"{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
+        
+        # 获取新闻
+        news = get_stock_news(stock_name, stock_code, limit=3)
+        if news:
+            print(format_news_for_display(news))
+        else:
+            print(f"  暂无相关新闻")
+        
+        # ===== 股权变动 =====
+        print(f"\n{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
+        print(f"{Color.BOLD}  📋 股权变动{Color.RESET}")
+        print(f"{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
+        
+        events = get_stock_events(stock_name, stock_code)
+        if events:
+            print(format_events_for_display(events))
+        else:
+            print(f"  暂无股权变动信息")
 
     except Exception as e:
         print(f"{Color.RED}  分析失败: {e}{Color.RESET}")
