@@ -45,8 +45,10 @@ from display import (
     print_progress, print_horizontal_bar, Color
 )
 from neodata_client import (get_stock_news, get_stock_events, get_capital_flow,
+                            get_margin_trading_data, get_institutional_sentiment,
                             format_news_for_display, format_events_for_display,
-                            format_capital_flow_for_display)
+                            format_capital_flow_for_display, format_margin_for_display,
+                            format_sentiment_for_display)
 import akshare_data as akdata
 
 # ==================== 功能函数 ====================
@@ -298,6 +300,26 @@ def analyze_stock(stock_code, days=120):
             print(format_events_for_display(events))
         else:
             print(f"  暂无股权变动信息")
+
+        # ===== 融资融券 =====
+        print(f"\n{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
+        print(f"{Color.BOLD}  💳 融资融券（杠杆资金动向）{Color.RESET}")
+        print(f"{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
+        margin = get_margin_trading_data(stock_name, stock_code)
+        if margin:
+            print(format_margin_for_display(margin))
+        else:
+            print(f"  暂无融资融券数据")
+
+        # ===== 机构观点 =====
+        print(f"\n{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
+        print(f"{Color.BOLD}  🏛️ 机构观点（目标价、基金持仓）{Color.RESET}")
+        print(f"{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
+        sentiment = get_institutional_sentiment(stock_name, stock_code)
+        if sentiment:
+            print(format_sentiment_for_display(sentiment))
+        else:
+            print(f"  暂无机构观点数据")
 
     except Exception as e:
         print(f"{Color.RED}  分析失败: {e}{Color.RESET}")

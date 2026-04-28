@@ -329,21 +329,153 @@ def format_capital_flow_for_display(capital):
     return f"  {content}"
 
 
+def get_institutional_sentiment(stock_name, stock_code="", days=30):
+    """
+    获取机构观点（目标价、基金持股、机构评级）
+
+    Args:
+        stock_name: 股票名称
+        stock_code: 股票代码
+        days: 只返回最近多少天的数据（默认30天）
+
+    Returns:
+        dict: 机构观点信息
+    """
+    query = f"{stock_name} {stock_code} 机构目标价 基金持股 机构评级 研究观点".strip()
+    result = query_neodata(query, "api")
+
+    if not result.get("suc"):
+        return {}
+
+    cutoff_date = datetime.now() - timedelta(days=days)
+    api_data = result.get("data", {}).get("apiData", {}).get("apiRecall", [])
+
+    for item in api_data:
+        if item.get("type") == "市场观点":
+            content = item.get("content", "")
+            if not content:
+                continue
+            return {
+                "type": item.get("type", ""),
+                "content": content,
+                "tag": item.get("tag", "")
+            }
+
+    return {}
+
+
+def get_margin_trading_data(stock_name, stock_code=""):
+    """
+    获取融资融券数据
+
+    Args:
+        stock_name: 股票名称
+        stock_code: 股票代码
+
+    Returns:
+        dict: 融资融券数据
+    """
+    query = f"{stock_name} {stock_code} 融资余额 融券余额 杠杆资金 两融".strip()
+    result = query_neodata(query, "api")
+
+    if not result.get("suc"):
+        return {}
+
+    api_data = result.get("data", {}).get("apiData", {}).get("apiRecall", [])
+
+    for item in api_data:
+        if item.get("type") == "A股融资融券情况":
+            content = item.get("content", "")
+            if not content:
+                continue
+            return {
+                "type": item.get("type", ""),
+                "content": content,
+                "tag": item.get("tag", "")
+            }
+
+    return {}
+
+
+def format_margin_for_display(data):
+    """格式化融资融券数据为可读文本"""
+    if not data:
+        return "暂无融资融券数据"
+
+    content = data.get("content", "")
+    if not content:
+        return "暂无融资融券数据"
+
+    # 提取关键行
+    lines = content.split('\n')
+    key_lines = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # 保留包含关键数据的行
+        if any(k in line for k in ['融资余额', '融券余额', '净买入', '增幅', '差额', '5连增', '5连降']):
+            key_lines.append(line)
+
+    if not key_lines:
+        # 如果没找到关键行，取前3行
+        key_lines = [l.strip() for l in lines[:3] if l.strip()]
+
+    return "  " + "\n  ".join(key_lines[:6])
+
+
+def format_sentiment_for_display(data):
+    """格式化机构观点数据为可读文本"""
+    if not data:
+        return "暂无机构观点"
+
+    content = data.get("content", "")
+    if not content:
+        return "暂无机构观点"
+
+    # 提取关键行
+    lines = content.split('\n')
+    key_lines = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # 保留包含关键数据的行
+        if any(k in line for k in ['目标价', '评级', '持股比例', '基金', '机构调研', '利好', '利空']):
+            key_lines.append(line)
+
+    if not key_lines:
+        # 如果没找到关键行，取前3行
+        key_lines = [l.strip() for l in lines[:3] if l.strip()]
+
+    return "  " + "\n  ".join(key_lines[:6])
+
+
 if __name__ == "__main__":
     # 测试
     print("=== 测试NeoData客户端 ===")
-    
+
     # 测试新闻查询
     news = get_stock_news("贵州茅台", "600519", limit=3)
     print("\n【新闻】")
     print(format_news_for_display(news))
-    
+
     # 测试资金流向
     capital = get_capital_flow("贵州茅台", "600519")
     print("\n【资金流向】")
     print(format_capital_flow_for_display(capital))
-    
+
     # 测试股权变动
     events = get_stock_events("贵州茅台", "600519")
     print("\n【股权变动】")
     print(format_events_for_display(events))
+
+    # 测试融资融券
+    margin = get_margin_trading_data("贵州茅台", "600519")
+    print("\n【融资融券】")
+    print(format_margin_for_display(margin))
+
+    # 测试机构观点
+    sentiment = get_institutional_sentiment("贵州茅台", "600519")
+    print("\n【机构观点】")
+    print(format_sentiment_for_display(sentiment))
