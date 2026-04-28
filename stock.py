@@ -37,7 +37,6 @@ if _script_dir not in sys.path:
 
 from fetcher import fetcher, sina_fetcher
 from indicators import calc_all_indicators, analyze_signals, generate_analysis_summary
-from patterns import identify_patterns
 from screener import screener
 from watchlist import show_watchlist_menu, list_stocks
 from display import (
@@ -45,10 +44,7 @@ from display import (
     print_money_flow_chart, print_market_overview, print_stock_detail,
     print_progress, print_horizontal_bar, Color
 )
-from backtest import run_backtest, print_backtest_report, list_strategies
-from chart import plot_kline_simple
 import akshare_data as akdata
-
 
 # ==================== 功能函数 ====================
 
@@ -93,7 +89,6 @@ def show_market_overview():
     except Exception as e:
         print(f"{Color.RED}  获取数据失败: {e}{Color.RESET}")
 
-
 def analyze_stock(stock_code, days=120):
     """分析个股（通俗易懂版）"""
     import pandas as pd
@@ -118,7 +113,6 @@ def analyze_stock(stock_code, days=120):
         # 计算所有指标（后台计算，不展示）
         kline = calc_all_indicators(kline)
         kline = analyze_signals(kline)
-        kline = identify_patterns(kline)
 
         # ===== 1. 基本信息 =====
         latest = kline.iloc[-1]
@@ -195,13 +189,6 @@ def analyze_stock(stock_code, days=120):
         if not buy_signals and not sell_signals:
             print(f"  ⚪ 暂无明显买卖信号，建议观望")
 
-        # K线形态
-        patterns = latest.get("K线形态", [])
-        if patterns:
-            print(f"\n  【K线形态】")
-            for p in patterns:
-                plain = _pattern_to_plain(p)
-                print(f"  📊 {plain}")
 
         # ===== 3. 综合建议 =====
         print(f"\n{Color.BOLD}{Color.CYAN}{'─' * 50}{Color.RESET}")
@@ -289,7 +276,6 @@ def analyze_stock(stock_code, days=120):
     except Exception as e:
         print(f"{Color.RED}  分析失败: {e}{Color.RESET}")
 
-
 def _signal_to_plain(signal):
     """把技术信号翻译成大白话"""
     mapping = {
@@ -322,30 +308,6 @@ def _signal_to_plain(signal):
     return signal.replace("🟢 ", "").replace("🔴 ", "")
 
 
-def _pattern_to_plain(pattern):
-    """把K线形态翻译成大白话"""
-    mapping = {
-        "锤子线(看涨)": "锤子线 → 下影线很长，下方有支撑，可能反弹",
-        "倒锤子线(看涨)": "倒锤子线 → 上影线较长，多方尝试反攻",
-        "吞没形态": "吞没形态 → 今日K线完全包住昨日，趋势可能反转",
-        "十字星(变盘)": "十字星 → 多空力量均衡，可能即将变盘",
-        "早晨之星(强烈看涨)": "早晨之星 → 跌势中出现的见底信号，强烈看涨",
-        "黄昏之星(强烈看跌)": "黄昏之星 → 涨势中出现的见顶信号，强烈看跌",
-        "三只乌鸦(看跌)": "三只乌鸦 → 连续3天下跌，空头力量强",
-        "三个白兵(看涨)": "三个白兵 → 连续3天上涨，多头力量强",
-        "射击之星(看跌)": "射击之星 → 涨势中冲高回落，上方压力大",
-        "上吊线(看跌)": "上吊线 → 高位出现长下影线，可能见顶",
-        "红三兵(看涨)": "红三兵 → 连续3根阳线，上涨势头好",
-        "乌云盖顶(看跌)": "乌云盖顶 → 阴线深入阳线内部，上涨受阻",
-        "刺透形态(看涨)": "刺透形态 → 阳线深入阴线内部，下跌可能结束",
-        "孕线(变盘)": "孕线 → 今日K线缩在昨日内部，变盘在即",
-    }
-    for key, plain in mapping.items():
-        if key in pattern:
-            return plain
-    return pattern
-
-
 def _calc_score(latest, buy_signals, sell_signals):
     """计算综合评分（0-10）"""
     score = 5  # 基准分
@@ -368,7 +330,6 @@ def _calc_score(latest, buy_signals, sell_signals):
     score -= len(sell_signals) * 0.5
 
     return max(0, min(10, round(score)))
-
 
 def _calc_price_levels(latest):
     """
@@ -411,7 +372,6 @@ def _calc_price_levels(latest):
 
     return round(support, 2), round(resistance, 2), buy_price, sell_price
 
-
 def _show_depth_inline(stock_code):
     """在个股分析中内联展示盘口（新浪五档）"""
     try:
@@ -423,7 +383,6 @@ def _show_depth_inline(stock_code):
         pass
 
     print(f"  {Color.DIM}盘口数据暂不可用{Color.RESET}")
-
 
 def _print_depth(depth):
     """打印五档盘口表格"""
@@ -467,14 +426,12 @@ def _print_depth(depth):
         else:
             print(f"  {Color.YELLOW}→ 买卖力量均衡{Color.RESET}")
 
-
 def show_depth(stock_code):
     """单独查看某只股票的五档盘口"""
     print(f"\n{Color.BOLD}{Color.CYAN}{'═' * 50}{Color.RESET}")
     print(f"{Color.BOLD}{Color.CYAN}  📊 {stock_code} 盘口分析{Color.RESET}")
     print(f"{Color.BOLD}{Color.CYAN}{'═' * 50}{Color.RESET}")
     _show_depth_inline(stock_code)
-
 
 def search_stock(keyword):
     """搜索股票"""
@@ -487,7 +444,6 @@ def search_stock(keyword):
             print(f"{Color.YELLOW}  未找到匹配的股票{Color.RESET}")
     except Exception as e:
         print(f"{Color.RED}  搜索失败: {e}{Color.RESET}")
-
 
 def show_stock_selection():
     """智能选股菜单"""
@@ -607,7 +563,6 @@ def show_stock_selection():
         import traceback
         traceback.print_exc()
 
-
 def show_sector_analysis():
     """板块分析"""
     import pandas as pd
@@ -667,7 +622,6 @@ def show_sector_analysis():
 
     except Exception as e:
         print(f"{Color.RED}  板块分析失败: {e}{Color.RESET}")
-
 
 def show_quick_screen():
     """快速选股（基础条件筛选）"""
@@ -735,98 +689,7 @@ def show_quick_screen():
     except Exception as e:
         print(f"{Color.RED}  筛选失败: {e}{Color.RESET}")
 
-
 # ==================== 回测功能 ====================
-
-def show_backtest_menu():
-    """策略回测菜单"""
-    print(f"\n{Color.BOLD}{Color.CYAN}{'═'*50}{Color.RESET}")
-    print(f"{Color.BOLD}{Color.CYAN}  📊 策略回测{Color.RESET}")
-    print(f"{Color.BOLD}{Color.CYAN}{'═'*50}{Color.RESET}")
-
-    strategies = list_strategies()
-    for i, (key, desc) in enumerate(strategies, 1):
-        print(f"  {i}. {desc}")
-    print(f"  0. 返回主菜单")
-    print()
-
-    choice = input(f"  {Color.BOLD}请选择策略 (0-{len(strategies)}): {Color.RESET}").strip()
-    if choice == "0":
-        return
-
-    try:
-        idx = int(choice) - 1
-        if idx < 0 or idx >= len(strategies):
-            print(f"{Color.YELLOW}  无效选择{Color.RESET}")
-            return
-        strategy_key, strategy_desc = strategies[idx]
-    except ValueError:
-        print(f"{Color.YELLOW}  输入无效{Color.RESET}")
-        return
-
-    code = input(f"  {Color.BOLD}请输入股票代码 (如 600519): {Color.RESET}").strip()
-    if not code:
-        return
-
-    days_input = input(f"  {Color.BOLD}回测周期天数 (默认500): {Color.RESET}").strip()
-    days = int(days_input) if days_input.isdigit() else 500
-
-    capital_input = input(f"  {Color.BOLD}初始资金 (默认100000): {Color.RESET}").strip()
-    capital = float(capital_input) if capital_input else 100000
-
-    print(f"\n  {Color.DIM}正在获取 {code} 的历史数据...{Color.RESET}")
-    try:
-        kline = fetcher.get_kline(code, count=days)
-        if kline.empty:
-            print(f"{Color.RED}  未找到该股票数据{Color.RESET}")
-            return
-
-        print(f"  {Color.DIM}正在运行回测: {strategy_desc}...{Color.RESET}")
-        result = run_backtest(code, kline, strategy_name=strategy_key,
-                              initial_capital=capital, position_pct=1.0, stop_loss_pct=0.05)
-        print_backtest_report(result)
-    except Exception as e:
-        print(f"{Color.RED}  回测失败: {e}{Color.RESET}")
-
-
-def show_chart_export():
-    """K线图导出"""
-    print(f"\n{Color.BOLD}{Color.CYAN}{'═'*50}{Color.RESET}")
-    print(f"{Color.BOLD}{Color.CYAN}  📈 K线图导出{Color.RESET}")
-    print(f"{Color.BOLD}{Color.CYAN}{'═'*50}{Color.RESET}")
-
-    code = input(f"  {Color.BOLD}请输入股票代码 (如 600519): {Color.RESET}").strip()
-    if not code:
-        return
-
-    print(f"  {Color.DIM}正在获取K线数据...{Color.RESET}")
-    try:
-        kline = fetcher.get_kline(code, count=120)
-        if kline.empty:
-            print(f"{Color.RED}  未找到数据{Color.RESET}")
-            return
-
-        # 尝试获取名称
-        name = code
-        try:
-            rt = fetcher.get_realtime_quote(code)
-            if not rt.empty:
-                name = rt.iloc[0].get("名称", code)
-        except Exception:
-            pass
-
-        save_dir = input(f"  {Color.BOLD}保存目录 (默认当前目录，直接回车): {Color.RESET}").strip() or "."
-
-        print(f"  {Color.DIM}正在生成K线图...{Color.RESET}")
-        path = plot_kline_simple(kline, stock_code=code, save_dir=save_dir)
-        if path:
-            print(f"\n  {Color.GREEN}✅ K线图已保存: {path}{Color.RESET}")
-        else:
-            print(f"\n  {Color.YELLOW}⚠️ 图表生成失败，请检查是否安装了 mplfinance:{Color.RESET}")
-            print(f"  {Color.DIM}   pip install mplfinance matplotlib{Color.RESET}")
-    except Exception as e:
-        print(f"{Color.RED}  导出失败: {e}{Color.RESET}")
-
 
 def show_akshare_data():
     """AKShare 补充数据菜单"""
@@ -920,7 +783,6 @@ def show_akshare_data():
     except Exception as e:
         print(f"{Color.RED}  获取失败: {e}{Color.RESET}")
 
-
 # ==================== 主菜单 ====================
 
 def print_banner():
@@ -936,7 +798,6 @@ def print_banner():
 ╚══════════════════════════════════════════════╝
 {Color.RESET}"""
     print(banner)
-
 
 def print_menu():
     """打印主菜单"""
@@ -958,7 +819,6 @@ def print_menu():
   │  0. 退出                   │
   └─────────────────────────────┘{Color.RESET}
 """)
-
 
 def analyze_multiple_stocks(codes):
     """同时分析多只股票（简洁同屏版）"""
@@ -1053,7 +913,6 @@ def analyze_multiple_stocks(codes):
     else:
         print(f"\n  {Color.YELLOW}没有获取到任何数据{Color.RESET}")
 
-
 def main():
     """主函数"""
     print_banner()
@@ -1075,36 +934,6 @@ def main():
             show_market_overview()
         elif arg.lower() == "depth" and len(sys.argv) > 2:
             show_depth(sys.argv[2])
-        elif arg.lower() == "chart" and len(sys.argv) > 2:
-            # 命令行导出K线图
-            code = sys.argv[2]
-            save_dir = sys.argv[3] if len(sys.argv) > 3 else "."
-            try:
-                kline = fetcher.get_kline(code, count=120)
-                if not kline.empty:
-                    path = plot_kline_simple(kline, stock_code=code, save_dir=save_dir)
-                    if path:
-                        print(f"K线图已保存: {path}")
-                    else:
-                        print("图表生成失败，请安装: pip install mplfinance")
-                else:
-                    print("未找到数据")
-            except Exception as e:
-                print(f"导出失败: {e}")
-        elif arg.lower() == "backtest" and len(sys.argv) > 3:
-            # 命令行回测: python stock.py backtest 600519 macd_cross
-            code = sys.argv[2]
-            strategy = sys.argv[3]
-            days = int(sys.argv[4]) if len(sys.argv) > 4 else 500
-            try:
-                kline = fetcher.get_kline(code, count=days)
-                if not kline.empty:
-                    result = run_backtest(code, kline, strategy_name=strategy)
-                    print_backtest_report(result)
-                else:
-                    print("未找到数据")
-            except Exception as e:
-                print(f"回测失败: {e}")
         elif "," in arg:
             # 多股票同屏分析
             codes = [c.strip() for c in arg.split(",") if c.strip()]
@@ -1151,17 +980,12 @@ def main():
             code = input(f"\n  {Color.BOLD}请输入股票代码查看盘口 (如 600519): {Color.RESET}").strip()
             if code:
                 show_depth(code)
-        elif choice == "9":
-            show_backtest_menu()
-        elif choice == "10":
-            show_chart_export()
         elif choice == "11":
             show_akshare_data()
         else:
             print(f"{Color.YELLOW}  无效选择，请重新输入{Color.RESET}")
 
         input(f"\n  {Color.DIM}按回车键继续...{Color.RESET}")
-
 
 if __name__ == "__main__":
     import pandas as pd
